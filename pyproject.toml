@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ctrnn-evo"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "jax>=0.4.25",
+    "numpy>=1.26",
+    "pytest>=8",
+]
+
+[project.optional-dependencies]
+cuda = ["jax[cuda12]>=0.4.25"]
+dev  = ["pytest>=8", "pytest-xdist"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ctrnn_evo*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

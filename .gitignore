@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# JAX / XLA cache
+.jax_cache/
+/tmp/jax_cache/
+
+# Experiment outputs
+runs/
+logs/
+checkpoints/
+*.npz
+*.pkl
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
