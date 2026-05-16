@@ -22,7 +22,7 @@ def random_walk(
     return jax.random.uniform(key, (2,), minval=-1.0, maxval=1.0)
 
 
-def gradient_follower(
+def nearest_hotspot(
     key: jax.Array,
     sensors: jnp.ndarray,
     state: WorldState,
@@ -31,12 +31,10 @@ def gradient_follower(
     """
     Move directly toward the nearest food hotspot at full speed.
 
-    This controller has access to full WorldState (including exact hotspot
-    positions) and is a validation tool only — not restricted to the sensors
-    an evolved agent receives.
-
-    Uses direct Euclidean distance rather than the food-field gradient to
-    avoid float32 underflow at large distances from narrow hotspots.
+    Validation tool only — reads exact hotspot coordinates from WorldState,
+    which evolved agents cannot access.  Sensors are ignored entirely.
+    Its sole purpose is to confirm the world is survivable in principle
+    before asking evolution to solve it.
     """
     diff      = state.hotspot_pos - state.agent_pos[None, :]   # [n_food, 2]
     distances = jnp.sqrt(jnp.sum(diff ** 2, axis=-1))          # [n_food]

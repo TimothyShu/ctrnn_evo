@@ -26,8 +26,8 @@ Expected interface in ctrnn_evo.world:
 Expected interface in ctrnn_evo.controllers:
 
     random_walk(key, sensors, state, wcfg)     -> action [2]
-    gradient_follower(key, sensors, state, wcfg) -> action [2]
-        (gradient_follower may use full WorldState — it is a validation tool,
+    nearest_hotspot(key, sensors, state, wcfg) -> action [2]
+        (nearest_hotspot may use full WorldState — it is a validation tool,
          not an evolved agent, and intentionally has more information than sensors)
 """
 import jax
@@ -44,7 +44,7 @@ from ctrnn_evo.world import (
     food_at,
     run_episode,
 )
-from ctrnn_evo.controllers import random_walk, gradient_follower
+from ctrnn_evo.controllers import random_walk, nearest_hotspot
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -356,19 +356,19 @@ class TestControllers:
             assert jnp.all(action >= -1.0) and jnp.all(action <= 1.0), \
                 "random_walk must return actions in [-1, 1]"
 
-    def test_gradient_follower_action_shape(self, state, wcfg):
+    def test_nearest_hotspot_action_shape(self, state, wcfg):
         sensors = sensor_readout(state, wcfg)
-        action  = gradient_follower(jax.random.PRNGKey(0), sensors, state, wcfg)
+        action  = nearest_hotspot(jax.random.PRNGKey(0), sensors, state, wcfg)
         assert action.shape == (2,)
 
-    def test_gradient_follower_action_in_range(self, state, wcfg):
+    def test_nearest_hotspot_action_in_range(self, state, wcfg):
         sensors = sensor_readout(state, wcfg)
-        action  = gradient_follower(jax.random.PRNGKey(0), sensors, state, wcfg)
+        action  = nearest_hotspot(jax.random.PRNGKey(0), sensors, state, wcfg)
         assert jnp.all(action >= -1.0) and jnp.all(action <= 1.0)
 
-    def test_gradient_follower_moves_toward_food(self, wcfg):
+    def test_nearest_hotspot_moves_toward_food(self, wcfg):
         """
-        Starting from a known offset from a single hotspot, gradient_follower
+        Starting from a known offset from a single hotspot, nearest_hotspot
         should produce an action that moves the agent closer to the hotspot.
         """
         wcfg_single = WorldConfig(n_food=1, hotspot_drift=0.0)
@@ -385,7 +385,7 @@ class TestControllers:
             rng_key=state.rng_key,
         )
         sensors = sensor_readout(at_offset, wcfg_single)
-        action  = gradient_follower(jax.random.PRNGKey(0), sensors, at_offset, wcfg_single)
+        action  = nearest_hotspot(jax.random.PRNGKey(0), sensors, at_offset, wcfg_single)
         # Action x-component should be positive (toward hotspot at +x direction)
         assert float(action[0]) > 0.0, "Gradient follower should move toward hotspot"
 
@@ -393,13 +393,13 @@ class TestControllers:
 # ── Validation gates ──────────────────────────────────────────────────────────
 
 class TestValidationGates:
-    def test_gradient_follower_survives_full_episode(self):
+    def test_nearest_hotspot_survives_full_episode(self):
         """
         Key M3 gate: a gradient-following controller must survive the entire
         episode without starving.
         """
         wcfg = WorldConfig(episode_steps=500)
-        _, steps = run_episode(jax.random.PRNGKey(0), gradient_follower, wcfg)
+        _, steps = run_episode(jax.random.PRNGKey(0), nearest_hotspot, wcfg)
         assert steps == wcfg.episode_steps, (
             f"Gradient follower starved at step {steps}/{wcfg.episode_steps}"
         )
@@ -430,13 +430,13 @@ class TestValidationGates:
         wcfg  = WorldConfig(episode_steps=1000)
         seeds = [20, 21, 22]
 
-        gf_steps = [run_episode(jax.random.PRNGKey(s), gradient_follower, wcfg)[1] for s in seeds]
+        gf_steps = [run_episode(jax.random.PRNGKey(s), nearest_hotspot, wcfg)[1] for s in seeds]
         rw_steps = [run_episode(jax.random.PRNGKey(s), random_walk,        wcfg)[1] for s in seeds]
 
         mean_gf = np.mean(gf_steps)
         mean_rw = np.mean(rw_steps)
 
         assert mean_gf > mean_rw * 2, (
-            f"Difficulty band too narrow: gradient_follower mean={mean_gf:.0f}, "
+            f"Difficulty band too narrow: nearest_hotspot mean={mean_gf:.0f}, "
             f"random_walk mean={mean_rw:.0f}.  Gap should be at least 2x."
         )
