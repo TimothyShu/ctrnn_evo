@@ -482,7 +482,7 @@ class TestMilestoneGates:
         """
         P    = 64
         keys = jax.random.split(jax.random.PRNGKey(300), P)
-        pop  = jax.vmap(random_genome, in_axes=(0, None))(keys, cfg, cfg.n_in + cfg.n_out)
+        pop  = jax.vmap(random_genome, in_axes=(0, None, None))(keys, cfg, cfg.n_in + cfg.n_out)
 
         mean_before = float(jnp.mean(jnp.sum(pop.active_mask, axis=1)))
 

@@ -89,8 +89,9 @@ def random_genome(key: jax.Array, cfg: Config, n_active: int | None = None) -> G
     # --- Weight magnitudes ---
     weight_matrix = jnp.abs(jax.random.normal(keys[5], (cfg.N_max, cfg.N_max)) * 0.5)
 
-    # --- Edge mask at target density ---
-    edge_mask = jax.random.uniform(keys[6], (cfg.N_max, cfg.N_max)) < cfg.init_edge_density
+    # --- Edge mask at target density, only between active neurons ---
+    candidate = jax.random.uniform(keys[6], (cfg.N_max, cfg.N_max)) < cfg.init_edge_density
+    edge_mask = candidate & active_mask[:, None] & active_mask[None, :]
 
     return Genome(
         active_mask=active_mask,
