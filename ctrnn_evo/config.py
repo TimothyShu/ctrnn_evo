@@ -6,7 +6,7 @@ from typing import Tuple
 class Config:
     # Network capacity
     N_max: int = 64
-    n_in:  int = 4
+    n_in:  int = 2
     n_out: int = 2
 
     # Integration
