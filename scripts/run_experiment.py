@@ -52,7 +52,7 @@ from ctrnn_evo.evolution import (
     fitness_threshold, convergence_stop,
 )
 from ctrnn_evo.analysis import analyse_genome
-from ctrnn_evo.logger import make_run_dir, save_config, make_logger
+from ctrnn_evo.logger import make_run_dir, save_config, make_logger, latest_state_checkpoint
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -75,6 +75,15 @@ def parse_args() -> argparse.Namespace:
                    help="stop when max_fitness hasn't improved by --convergence-tol over this many generations")
     p.add_argument("--convergence-tol",    type=float, default=1e-3,
                    help="minimum improvement required within --convergence-window (default: 0.001)")
+    p.add_argument("--save-state-every", type=int,   default=100,
+                   help="save full training state every N generations for resume support (0 = disabled)")
+    p.add_argument("--resume-from",      type=str,   default=None,
+                   help="path to a state_gen_*.npz checkpoint; resumes that single replicate "
+                        "and skips the second condition.  For per-replicate auto-resume within "
+                        "a full experiment use --resume-run-dir instead.")
+    p.add_argument("--resume-run-dir",   type=str,   default=None,
+                   help="path to an interrupted run directory; the script will auto-detect the "
+                        "latest state checkpoint and resume that single replicate.")
     p.add_argument("--verbose",       action="store_true",        help="print per-generation progress")
     p.add_argument("--smoke-test",    action="store_true",        help="quick run: 2 replicates × 5 generations × 1 eval")
     return p.parse_args()
@@ -112,9 +121,19 @@ def run_condition(
     rep_keys: list[jax.Array],
     verbose: bool,
     early_stop_fn=None,
+    save_state_every: int = 100,
+    resume_from: "str | None" = None,
 ) -> list[dict]:
     """
     Run all replicates for one condition.  Returns a list of result dicts.
+
+    Parameters
+    ----------
+    save_state_every : save full training state every N generations (0 = off).
+                       State files land in run_dir/checkpoints/state_gen_*.npz.
+    resume_from      : path to a state_gen_*.npz checkpoint.  When set, only
+                       one replicate is run (the resumed one) and the rep_keys
+                       list is not used.
     """
     condition_dir = output_dir / condition_name
     condition_dir.mkdir(parents=True, exist_ok=True)
@@ -122,11 +141,17 @@ def run_condition(
     results = []
 
     for rep, rep_key in enumerate(rep_keys):
+        # When resuming a specific state file we only run one replicate
+        if resume_from is not None and rep > 0:
+            break
+
         print(f"  [{condition_name}] replicate {rep + 1}/{n_replicates}")
 
         run_dir = make_run_dir(condition_dir, run_id=f"rep{rep:02d}")
         save_config(run_dir, cfg, wcfg, rates)
         cb = make_logger(run_dir, checkpoint_every=100, verbose=verbose)
+
+        state_ckpt_dir = (run_dir / "checkpoints") if save_state_every > 0 else None
 
         t0 = time.perf_counter()
         best_genome, final_fitness, history = run_evolution(
@@ -135,6 +160,9 @@ def run_condition(
             # early_stop_fn is a factory so each replicate gets its own
             # independent state (convergence_stop tracks its own window)
             early_stop_fn=early_stop_fn() if callable(early_stop_fn) else early_stop_fn,
+            resume_from=resume_from,
+            state_checkpoint_dir=state_ckpt_dir,
+            state_checkpoint_every=save_state_every if save_state_every > 0 else 100,
         )
         elapsed = time.perf_counter() - t0
 
@@ -277,6 +305,21 @@ def main() -> None:
     else:
         early_stop_factory = None
 
+    # ── Resolve resume path ───────────────────────────────────────────────────
+    resume_from = None
+    if args.resume_from is not None:
+        resume_from = args.resume_from
+        print(f"  resume_from     = {resume_from}\n")
+    elif args.resume_run_dir is not None:
+        resume_from = latest_state_checkpoint(args.resume_run_dir)
+        if resume_from is None:
+            print(f"WARNING: no state_gen_*.npz found in {args.resume_run_dir}/checkpoints — "
+                  "starting fresh.\n")
+        else:
+            print(f"  resume_from     = {resume_from}  (auto-detected)\n")
+
+    save_state_every = args.save_state_every
+
     t_total = time.perf_counter()
     all_results: list[dict] = []
 
@@ -294,23 +337,30 @@ def main() -> None:
         rep_keys=baseline_keys,
         verbose=args.verbose,
         early_stop_fn=early_stop_factory,
+        save_state_every=save_state_every,
+        resume_from=resume_from,
     )
 
     # ── Modular condition ─────────────────────────────────────────────────────
-    print(f"\n── Condition: modular (lambda_conn={args.lambda_conn}) ────────────────")
-    all_results += run_condition(
-        condition_name="modular",
-        cfg=cfg_modular,
-        wcfg=wcfg,
-        rates=rates,
-        n_replicates=args.n_replicates,
-        n_generations=args.n_generations,
-        n_evals=args.n_evals,
-        output_dir=output_dir,
-        rep_keys=modular_keys,
-        verbose=args.verbose,
-        early_stop_fn=early_stop_factory,
-    )
+    # If resuming a specific state file, skip the second condition entirely
+    if resume_from is None:
+        print(f"\n── Condition: modular (lambda_conn={args.lambda_conn}) ────────────────")
+        all_results += run_condition(
+            condition_name="modular",
+            cfg=cfg_modular,
+            wcfg=wcfg,
+            rates=rates,
+            n_replicates=args.n_replicates,
+            n_generations=args.n_generations,
+            n_evals=args.n_evals,
+            output_dir=output_dir,
+            rep_keys=modular_keys,
+            verbose=args.verbose,
+            early_stop_fn=early_stop_factory,
+            save_state_every=save_state_every,
+        )
+    else:
+        print("\n(Skipping modular condition — single-replicate resume mode.)")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     total_elapsed = time.perf_counter() - t_total

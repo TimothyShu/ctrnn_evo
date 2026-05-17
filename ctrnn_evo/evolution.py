@@ -40,12 +40,15 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
+from pathlib import Path
+
 from .config import Config
 from .genome import Genome, random_genome
 from .mutation import MutationRates, mutate
 from .cost import connection_cost, adjusted_fitness
 from .world import WorldConfig
 from .brain import run_brain_episode_full
+from .logger import save_training_state, load_training_state
 
 
 # ── Population initialisation ─────────────────────────────────────────────────
@@ -255,6 +258,9 @@ def run_evolution(
     n_evals: int = 5,
     callback=None,
     early_stop_fn=None,
+    resume_from: "str | Path | None" = None,
+    state_checkpoint_dir: "str | Path | None" = None,
+    state_checkpoint_every: int = 100,
 ) -> tuple[Genome, jnp.ndarray, list[dict]]:
     """
     Drive the full evolutionary loop.
@@ -265,6 +271,7 @@ def run_evolution(
       3. (Optional) call early_stop_fn(stats) — halt if it returns True.
       4. evolve_step  -> new unevaluated offspring.
       5. eval_population + compute_fitness on offspring.
+      6. (Optional) save full training state for resume capability.
 
     Parameters
     ----------
@@ -285,22 +292,49 @@ def run_evolution(
                        convergence_stop(window, tol)    — stop when max_fitness hasn't
                                                           improved by tol in last window gens
 
+    resume_from    : path to a state_gen_*.npz written by a previous run.
+                     When provided the ``key`` argument is ignored — the saved
+                     RNG state is used instead.  The loop resumes from the
+                     saved generation number; history returned covers only the
+                     newly-completed generations.  Use load_history(run_dir) to
+                     read the full history including pre-resume generations.
+                     Shortcut: pass latest_state_checkpoint(run_dir) directly.
+
+    state_checkpoint_dir  : directory to write state_gen_*.npz snapshots into
+                            (typically run_dir / "checkpoints").  If None,
+                            state snapshots are not saved.
+
+    state_checkpoint_every : save a state snapshot every this many generations
+                             (default 100).  Only used when state_checkpoint_dir
+                             is set.
+
     Returns
     -------
     best_genome    : single Genome (unbatched) with highest final fitness
     final_fitness  : float32 [pop_size] fitness of the last completed generation
     history        : list of stats dicts, one per completed generation
+                     (from start_gen to the last completed generation)
     """
-    # ── Initialise ───────────────────────────────────────────────────────────
-    key, k_init, k_eval = jax.random.split(key, 3)
-    pop           = init_population(k_init, cfg)
-    steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
-    fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+    # ── Initialise or resume ─────────────────────────────────────────────────
+    if resume_from is not None:
+        pop, fitness, steps, key, start_gen = load_training_state(resume_from)
+        print(f"  Resuming from generation {start_gen} "
+              f"(loaded {Path(resume_from).name})")
+    else:
+        start_gen = 0
+        key, k_init, k_eval = jax.random.split(key, 3)
+        pop           = init_population(k_init, cfg)
+        steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
+        fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
 
     history: list[dict] = []
 
+    if state_checkpoint_dir is not None:
+        state_checkpoint_dir = Path(state_checkpoint_dir)
+        state_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
     # ── Generation loop ───────────────────────────────────────────────────────
-    for gen in range(n_generations):
+    for gen in range(start_gen, n_generations):
         # Stats on current (already-evaluated) population
         stats = collect_stats(gen, fitness, steps, pop, cfg)
         history.append(stats)
@@ -319,6 +353,15 @@ def run_evolution(
         pop           = evolve_step(k_step, pop, fitness, rates, cfg)
         steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
         fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+
+        # State snapshot — labelled with the generation about to be collected
+        next_gen = gen + 1
+        if (
+            state_checkpoint_dir is not None
+            and next_gen % state_checkpoint_every == 0
+        ):
+            snap_path = state_checkpoint_dir / f"state_gen_{next_gen:06d}.npz"
+            save_training_state(snap_path, pop, fitness, steps, key, next_gen)
 
     # ── Extract best genome (unbatched) ──────────────────────────────────────
     best_idx    = int(jnp.argmax(fitness))

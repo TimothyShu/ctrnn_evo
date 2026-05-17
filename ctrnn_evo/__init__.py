@@ -21,6 +21,7 @@ from .logger import (
     save_genome, load_genome,
     append_history, load_history,
     make_logger,
+    save_training_state, load_training_state, latest_state_checkpoint,
 )
 from .mutation import (
     MutationRates,

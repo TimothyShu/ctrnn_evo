@@ -32,6 +32,7 @@ from ctrnn_evo.logger import (
     save_genome, load_genome,
     append_history, load_history,
     make_logger,
+    save_training_state, load_training_state, latest_state_checkpoint,
 )
 
 
@@ -367,3 +368,197 @@ def test_run_evolution_logger_best_genome_loadable(cfg, wcfg, rates, tmp_base):
 
     g = load_genome(run_dir / "best_genome.npz")
     assert g.weight_matrix.shape == (cfg.N_max, cfg.N_max)
+
+
+# ── 7. save_training_state / load_training_state / latest_state_checkpoint ────
+
+@pytest.fixture(scope="module")
+def pop(cfg):
+    """Small evaluated population for state I/O tests."""
+    from ctrnn_evo.evolution import init_population, eval_population, compute_fitness
+    wcfg_small = WorldConfig(episode_steps=20)
+    key = jax.random.PRNGKey(42)
+    k1, k2 = jax.random.split(key)
+    population = init_population(k1, cfg)
+    steps, c_acts = eval_population(k2, population, cfg, wcfg_small, n_evals=1)
+    fitness = compute_fitness(steps, c_acts, population, cfg, wcfg_small)
+    return population, fitness, steps
+
+
+def test_save_training_state_creates_file(tmp_base, pop, cfg):
+    population, fitness, steps = pop
+    run_dir = make_run_dir(tmp_base)
+    path = run_dir / "checkpoints" / "state_gen_000100.npz"
+    key = jax.random.PRNGKey(7)
+    save_training_state(path, population, fitness, steps, key, generation=100)
+    assert path.exists()
+
+
+def test_load_training_state_generation(tmp_base, pop, cfg):
+    population, fitness, steps = pop
+    run_dir = make_run_dir(tmp_base)
+    path = run_dir / "checkpoints" / "state_gen_000050.npz"
+    key = jax.random.PRNGKey(8)
+    save_training_state(path, population, fitness, steps, key, generation=50)
+    _, _, _, _, gen = load_training_state(path)
+    assert gen == 50
+
+
+def test_load_training_state_pop_shape(tmp_base, pop, cfg):
+    population, fitness, steps = pop
+    run_dir = make_run_dir(tmp_base)
+    path = run_dir / "checkpoints" / "state_gen_000010.npz"
+    key = jax.random.PRNGKey(9)
+    save_training_state(path, population, fitness, steps, key, generation=10)
+    pop2, _, _, _, _ = load_training_state(path)
+    assert pop2.weight_matrix.shape == (cfg.population_size, cfg.N_max, cfg.N_max), (
+        f"Expected pop shape ({cfg.population_size}, {cfg.N_max}, {cfg.N_max}), "
+        f"got {pop2.weight_matrix.shape}"
+    )
+
+
+def test_load_training_state_fitness_close(tmp_base, pop, cfg):
+    population, fitness, steps = pop
+    run_dir = make_run_dir(tmp_base)
+    path = run_dir / "checkpoints" / "state_gen_000020.npz"
+    key = jax.random.PRNGKey(10)
+    save_training_state(path, population, fitness, steps, key, generation=20)
+    _, fit2, _, _, _ = load_training_state(path)
+    assert jnp.allclose(fit2, fitness, atol=1e-6), "Fitness mismatch after roundtrip"
+
+
+def test_load_training_state_key_preserved(tmp_base, pop, cfg):
+    population, fitness, steps = pop
+    run_dir = make_run_dir(tmp_base)
+    path = run_dir / "checkpoints" / "state_gen_000030.npz"
+    key = jax.random.PRNGKey(2025)
+    save_training_state(path, population, fitness, steps, key, generation=30)
+    _, _, _, key2, _ = load_training_state(path)
+    assert jnp.array_equal(key2, key), "RNG key mismatch after roundtrip"
+
+
+def test_load_training_state_pop_active_mask(tmp_base, pop, cfg):
+    """active_mask must survive the save/load roundtrip exactly."""
+    population, fitness, steps = pop
+    run_dir = make_run_dir(tmp_base)
+    path = run_dir / "checkpoints" / "state_gen_000040.npz"
+    key = jax.random.PRNGKey(11)
+    save_training_state(path, population, fitness, steps, key, generation=40)
+    pop2, _, _, _, _ = load_training_state(path)
+    assert jnp.array_equal(pop2.active_mask, population.active_mask)
+
+
+def test_latest_state_checkpoint_none_when_empty(tmp_base):
+    run_dir = make_run_dir(tmp_base)
+    result = latest_state_checkpoint(run_dir)
+    assert result is None
+
+
+def test_latest_state_checkpoint_single_file(tmp_base, pop, cfg):
+    population, fitness, steps = pop
+    run_dir = make_run_dir(tmp_base)
+    path = run_dir / "checkpoints" / "state_gen_000100.npz"
+    save_training_state(path, population, fitness, steps, jax.random.PRNGKey(0), 100)
+    result = latest_state_checkpoint(run_dir)
+    assert result == path
+
+
+def test_latest_state_checkpoint_returns_latest(tmp_base, pop, cfg):
+    """When multiple state files exist, the highest-numbered one is returned."""
+    population, fitness, steps = pop
+    run_dir = make_run_dir(tmp_base)
+    ckpt = run_dir / "checkpoints"
+    for gen in (100, 200, 50):
+        save_training_state(
+            ckpt / f"state_gen_{gen:06d}.npz",
+            population, fitness, steps, jax.random.PRNGKey(gen), gen,
+        )
+    result = latest_state_checkpoint(run_dir)
+    assert result.name == "state_gen_000200.npz"
+
+
+# ── 8. run_evolution state checkpoint integration ────────────────────────────
+
+def test_run_evolution_saves_state_files(cfg, wcfg, rates, tmp_base):
+    """run_evolution with state_checkpoint_dir should write state_gen_*.npz files."""
+    run_dir = make_run_dir(tmp_base)
+    ckpt_dir = run_dir / "checkpoints"
+
+    key = jax.random.PRNGKey(200)
+    run_evolution(
+        key, 6, cfg, wcfg, rates, n_evals=1,
+        state_checkpoint_dir=ckpt_dir,
+        state_checkpoint_every=2,
+    )
+    # Generations 2 and 4 should have state files (next_gen % 2 == 0)
+    assert (ckpt_dir / "state_gen_000002.npz").exists()
+    assert (ckpt_dir / "state_gen_000004.npz").exists()
+    assert not (ckpt_dir / "state_gen_000001.npz").exists()
+
+
+def test_run_evolution_state_file_loadable(cfg, wcfg, rates, tmp_base):
+    """State files written during run_evolution must load cleanly."""
+    run_dir = make_run_dir(tmp_base)
+    ckpt_dir = run_dir / "checkpoints"
+
+    key = jax.random.PRNGKey(201)
+    run_evolution(
+        key, 4, cfg, wcfg, rates, n_evals=1,
+        state_checkpoint_dir=ckpt_dir,
+        state_checkpoint_every=2,
+    )
+    state_path = ckpt_dir / "state_gen_000002.npz"
+    pop2, fit2, steps2, key2, gen2 = load_training_state(state_path)
+    assert gen2 == 2
+    assert pop2.weight_matrix.shape == (cfg.population_size, cfg.N_max, cfg.N_max)
+    assert fit2.shape == (cfg.population_size,)
+
+
+def test_run_evolution_resume_starts_at_correct_gen(cfg, wcfg, rates, tmp_base):
+    """Resuming from a state file at gen N should produce history starting at gen N."""
+    population, fitness_arr, steps_arr = (
+        __import__("ctrnn_evo").evolution.init_population(jax.random.PRNGKey(77), cfg),
+        None, None,
+    )
+    # Full setup via run_evolution with state saving
+    run_dir = make_run_dir(tmp_base)
+    ckpt_dir = run_dir / "checkpoints"
+
+    key = jax.random.PRNGKey(300)
+    run_evolution(
+        key, 4, cfg, wcfg, rates, n_evals=1,
+        state_checkpoint_dir=ckpt_dir,
+        state_checkpoint_every=2,
+    )
+    state_path = ckpt_dir / "state_gen_000002.npz"
+
+    # Now resume from gen 2
+    key2 = jax.random.PRNGKey(999)   # ignored — resume uses saved key
+    _, _, resumed_history = run_evolution(
+        key2, 4, cfg, wcfg, rates, n_evals=1,
+        resume_from=state_path,
+    )
+    # history[0]["generation"] should be 2 (the saved start_gen)
+    assert resumed_history[0]["generation"] == 2, (
+        f"Expected history to start at gen 2, got gen {resumed_history[0]['generation']}"
+    )
+
+
+def test_run_evolution_resume_history_length(cfg, wcfg, rates, tmp_base):
+    """Resuming from gen 2 with n_generations=4 should return 2 history entries (2, 3)."""
+    run_dir = make_run_dir(tmp_base)
+    ckpt_dir = run_dir / "checkpoints"
+
+    key = jax.random.PRNGKey(400)
+    run_evolution(
+        key, 4, cfg, wcfg, rates, n_evals=1,
+        state_checkpoint_dir=ckpt_dir,
+        state_checkpoint_every=2,
+    )
+    state_path = ckpt_dir / "state_gen_000002.npz"
+
+    _, _, resumed_history = run_evolution(
+        jax.random.PRNGKey(401), 4, cfg, wcfg, rates, n_evals=1,
+        resume_from=state_path,
+    )
+    assert len(resumed_history) == 2   # generations 2 and 3
