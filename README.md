@@ -138,6 +138,7 @@ python scripts/run_experiment.py --n-replicates 20 --n-generations 1000
 --n-evals            INT    episodes per fitness estimate         (default: 5)
 --pop-size           INT    population size                       (default: 1000)
 --lambda-conn        FLOAT  connection cost strength, modular     (default: 0.001)
+--lambda-act         FLOAT  activation cost strength, modular     (default: 0.0)
 --output-dir         PATH   root directory for saved runs         (default: runs/m8)
 --seed               INT    base random seed                      (default: 0)
 --fitness-threshold  FLOAT  stop a replicate early at this fitness

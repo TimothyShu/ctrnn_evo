@@ -67,6 +67,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n-evals",       type=int,   default=5,      help="episodes per fitness estimate")
     p.add_argument("--pop-size",      type=int,   default=1000,   help="population size")
     p.add_argument("--lambda-conn",   type=float, default=0.001,  help="connection cost coefficient for modular condition")
+    p.add_argument("--lambda-act",    type=float, default=0.0,    help="activation cost coefficient for modular condition (0 = disabled)")
     p.add_argument("--output-dir",    type=str,   default="runs/m8", help="root directory for all run output")
     p.add_argument("--seed",          type=int,   default=0,      help="base random seed")
     p.add_argument("--fitness-threshold",  type=float, default=None,
@@ -270,7 +271,7 @@ def main() -> None:
     cfg_modular = Config(
         population_size=args.pop_size,
         lambda_conn=args.lambda_conn,
-        lambda_act=0.0,
+        lambda_act=args.lambda_act,
     )
 
     # ── Key schedule ──────────────────────────────────────────────────────────
@@ -289,6 +290,7 @@ def main() -> None:
     print(f"  population_size = {args.pop_size}")
     print(f"  n_evals         = {args.n_evals}")
     print(f"  lambda_conn     = 0.0  (baseline)  vs  {args.lambda_conn}  (modular)")
+    print(f"  lambda_act      = 0.0  (baseline)  vs  {args.lambda_act}  (modular)")
     print(f"  output_dir      = {output_dir.resolve()}\n")
 
     # ── Early stop function ───────────────────────────────────────────────────
