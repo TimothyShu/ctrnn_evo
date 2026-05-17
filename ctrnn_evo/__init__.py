@@ -4,7 +4,12 @@ from .forward import forward_pass, batch_forward
 from .cost import connection_cost, adjusted_fitness
 from .world import WorldConfig, WorldState, food_at, sensor_readout, step_world, reset_world, run_episode
 from .controllers import random_walk, nearest_hotspot
-from .brain import run_brain_episode, batch_run_brain_episode, make_ctrnn_controller
+from .brain import run_brain_episode, run_brain_episode_full, batch_run_brain_episode, make_ctrnn_controller
+from .evolution import (
+    init_population, eval_population, compute_fitness,
+    tournament_select_idx, select_parents, reproduce,
+    evolve_step, collect_stats, run_evolution,
+)
 from .mutation import (
     MutationRates,
     perturb_weights, perturb_tau, perturb_bias, perturb_position,

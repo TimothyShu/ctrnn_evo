@@ -12,6 +12,10 @@ run_brain_episode(key, genome, cfg, wcfg) -> (final_state, steps_survived)
     Runs a full episode with the CTRNN brain driving the agent.
     JIT-compilable and vmap-safe.
 
+run_brain_episode_full(key, genome, cfg, wcfg) -> (final_state, steps_survived, mean_c_act)
+    Same as run_brain_episode but also returns mean activation cost across all steps.
+    Used by the evolutionary evaluator.
+
 batch_run_brain_episode(keys, genomes, cfg, wcfg) -> (final_states, steps)
     vmapped version over a population of genomes.
 """
@@ -66,7 +70,7 @@ def _brain_world_step(
     new_world = step_world(world_state, action, wcfg)
     alive = new_world.agent_energy > 0.0
 
-    return (new_world, v_new), alive
+    return (new_world, v_new), (alive, _c_act)
 
 
 # ── Public: single-genome episode ────────────────────────────────────────────
@@ -99,7 +103,7 @@ def run_brain_episode(
     step_keys = jax.random.split(k_steps, wcfg.episode_steps)
 
     def body(carry, rng_key):
-        new_carry, alive = _brain_world_step(carry, rng_key, genome, cfg, wcfg)
+        new_carry, (alive, _c_act) = _brain_world_step(carry, rng_key, genome, cfg, wcfg)
         return new_carry, alive
 
     (final_world, _v_final), alive_mask = jax.lax.scan(
@@ -108,6 +112,42 @@ def run_brain_episode(
 
     steps_survived = jnp.sum(alive_mask.astype(jnp.int32))
     return final_world, steps_survived
+
+
+# ── Public: single-genome episode + activation cost ──────────────────────────
+
+def run_brain_episode_full(
+    key: jax.Array,
+    genome: Genome,
+    cfg: Config,
+    wcfg: WorldConfig,
+) -> tuple[WorldState, jnp.ndarray, jnp.ndarray]:
+    """
+    Same as run_brain_episode but also accumulates mean activation cost.
+
+    Returns
+    -------
+    final_state    : WorldState after the last step
+    steps_survived : int32 scalar
+    mean_c_act     : float32 scalar — mean activation cost over all episode steps
+    """
+    k_world, k_steps = jax.random.split(key)
+
+    world_state = reset_world(k_world, wcfg)
+    v0          = jnp.zeros(cfg.N_max, dtype=jnp.float32)
+    step_keys   = jax.random.split(k_steps, wcfg.episode_steps)
+
+    def body(carry, rng_key):
+        new_carry, (alive, c_act) = _brain_world_step(carry, rng_key, genome, cfg, wcfg)
+        return new_carry, (alive, c_act)
+
+    (final_world, _v_final), (alive_mask, c_act_steps) = jax.lax.scan(
+        body, (world_state, v0), step_keys
+    )
+
+    steps_survived = jnp.sum(alive_mask.astype(jnp.int32))
+    mean_c_act     = jnp.mean(c_act_steps)
+    return final_world, steps_survived, mean_c_act
 
 
 # ── Public: population-level batch ───────────────────────────────────────────

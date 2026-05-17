@@ -1,9 +1,309 @@
 """
-Evolutionary loop — Milestone 5.
+evolution.py — Evolutionary loop for CTRNN neuroevolution.
 
-To implement:
-  - tournament_select : sample k genomes, return index of highest fitness
-  - reproduce         : select parent, apply mutation, return offspring genome
-  - generation_step   : evaluate population, select, reproduce, log
-  - run_evolution     : outer loop over N generations with checkpointing
+Public API
+----------
+init_population(key, cfg)
+    Initialise a random population of genomes.
+
+eval_population(key, pop_genomes, cfg, wcfg, n_evals=5)
+    Evaluate each genome over n_evals independent episodes.
+    Returns (mean_steps[pop], mean_c_act[pop]).
+
+compute_fitness(steps, c_acts, pop_genomes, cfg, wcfg)
+    Normalise steps to [0,1] and apply cost penalties.
+    Returns fitness[pop].
+
+tournament_select_idx(key, fitness, tournament_size)
+    Sample tournament_size candidates, return index of the best.
+
+select_parents(key, fitness, pop_size, tournament_size)
+    Run tournament selection pop_size times.
+    Returns parent_idxs[pop].
+
+reproduce(key, pop_genomes, parent_idxs, rates, cfg)
+    Gather parents by index, mutate each, return offspring population.
+
+evolve_step(key, pop_genomes, fitness, rates, cfg)
+    One full generation: select → reproduce → elitism.
+    Returns new (unevaluated) population.
+
+collect_stats(generation, fitness, steps, pop_genomes, cfg)
+    Compute per-generation statistics dict (Python floats, no JAX arrays).
+
+run_evolution(key, n_generations, cfg, wcfg, rates, n_evals, callback)
+    Drive the full evolutionary loop; return (best_genome, final_fitness, history).
 """
+
+from __future__ import annotations
+
+import jax
+import jax.numpy as jnp
+
+from .config import Config
+from .genome import Genome, random_genome
+from .mutation import MutationRates, mutate
+from .cost import connection_cost, adjusted_fitness
+from .world import WorldConfig
+from .brain import run_brain_episode_full
+
+
+# ── Population initialisation ─────────────────────────────────────────────────
+
+def init_population(key: jax.Array, cfg: Config) -> Genome:
+    """
+    Initialise a population of cfg.population_size random genomes.
+
+    Returns a batched Genome with a leading [population_size] dimension
+    on every field.
+    """
+    keys = jax.random.split(key, cfg.population_size)
+    return jax.vmap(random_genome, in_axes=(0, None))(keys, cfg)
+
+
+# ── Fitness evaluation ────────────────────────────────────────────────────────
+
+def _eval_genome(
+    keys: jax.Array,       # [n_evals, 2]
+    genome: Genome,
+    cfg: Config,
+    wcfg: WorldConfig,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Evaluate a single genome over n_evals independent episodes.
+
+    Returns (mean_steps, mean_c_act) averaged across episodes.
+    """
+    _, steps_all, c_acts_all = jax.vmap(
+        run_brain_episode_full, in_axes=(0, None, None, None)
+    )(keys, genome, cfg, wcfg)
+    return jnp.mean(steps_all.astype(jnp.float32)), jnp.mean(c_acts_all)
+
+
+def eval_population(
+    key: jax.Array,
+    pop_genomes: Genome,
+    cfg: Config,
+    wcfg: WorldConfig,
+    n_evals: int = 5,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Evaluate the full population.
+
+    Each genome is assessed across n_evals episodes with independent seeds.
+    All evaluations are parallelised via nested vmap (population x episodes).
+
+    Returns
+    -------
+    mean_steps  : float32 [pop_size] — average steps survived
+    mean_c_acts : float32 [pop_size] — average activation cost
+    """
+    # Split into [pop_size, n_evals, 2] keys
+    flat_keys  = jax.random.split(key, cfg.population_size * n_evals)
+    epoch_keys = flat_keys.reshape(cfg.population_size, n_evals, -1)
+
+    return jax.vmap(_eval_genome, in_axes=(0, 0, None, None))(
+        epoch_keys, pop_genomes, cfg, wcfg
+    )
+
+
+def compute_fitness(
+    steps: jnp.ndarray,        # [pop_size] float32 mean steps
+    c_acts: jnp.ndarray,       # [pop_size] float32 mean activation cost
+    pop_genomes: Genome,
+    cfg: Config,
+    wcfg: WorldConfig,
+) -> jnp.ndarray:
+    """
+    Convert raw step counts to adjusted fitness scores.
+
+        f_raw    = mean_steps / episode_steps          (normalised to [0, 1])
+        fitness  = f_raw - lambda_conn * C_conn - lambda_act * C_act
+
+    Returns fitness [pop_size].
+    """
+    f_raw = steps / float(wcfg.episode_steps)
+    return jax.vmap(adjusted_fitness, in_axes=(0, 0, 0, None))(
+        f_raw, pop_genomes, c_acts, cfg
+    )
+
+
+# ── Selection ─────────────────────────────────────────────────────────────────
+
+def tournament_select_idx(
+    key: jax.Array,
+    fitness: jnp.ndarray,
+    tournament_size: int,
+) -> jnp.ndarray:
+    """
+    Sample tournament_size candidates (with replacement) and return the
+    index of the one with the highest fitness.
+    """
+    candidate_idxs = jax.random.choice(
+        key, fitness.shape[0], shape=(tournament_size,), replace=False
+    )
+    best_in_tourney = jnp.argmax(fitness[candidate_idxs])
+    return candidate_idxs[best_in_tourney]
+
+
+def select_parents(
+    key: jax.Array,
+    fitness: jnp.ndarray,
+    pop_size: int,
+    tournament_size: int,
+) -> jnp.ndarray:
+    """
+    Run pop_size independent tournaments and return winner indices [pop_size].
+    """
+    keys = jax.random.split(key, pop_size)
+    return jax.vmap(tournament_select_idx, in_axes=(0, None, None))(
+        keys, fitness, tournament_size
+    )
+
+
+# ── Reproduction ──────────────────────────────────────────────────────────────
+
+def reproduce(
+    key: jax.Array,
+    pop_genomes: Genome,
+    parent_idxs: jnp.ndarray,   # [pop_size] int
+    rates: MutationRates,
+    cfg: Config,
+) -> Genome:
+    """
+    Build an offspring population by gathering selected parents and mutating each.
+
+    Returns a new batched Genome [pop_size].
+    """
+    # Gather parents (advanced indexing — safe inside jit/vmap)
+    offspring = jax.tree_util.tree_map(lambda x: x[parent_idxs], pop_genomes)
+
+    # Mutate every offspring with an independent key
+    mut_keys = jax.random.split(key, cfg.population_size)
+    return jax.vmap(mutate, in_axes=(0, 0, None, None))(mut_keys, offspring, cfg, rates)
+
+
+# ── One generation ────────────────────────────────────────────────────────────
+
+def evolve_step(
+    key: jax.Array,
+    pop_genomes: Genome,
+    fitness: jnp.ndarray,   # [pop_size] — fitness of current population
+    rates: MutationRates,
+    cfg: Config,
+) -> Genome:
+    """
+    Produce the next generation via tournament selection + mutation + elitism.
+
+    The best genome from the current population is copied unchanged into
+    slot 0 of the offspring (elitism = 1), preventing fitness regression.
+
+    Returns the new (unevaluated) offspring population.
+    """
+    k_sel, k_mut = jax.random.split(key)
+
+    # Selection + mutation
+    parent_idxs = select_parents(k_sel, fitness, cfg.population_size, cfg.tournament_size)
+    offspring   = reproduce(k_mut, pop_genomes, parent_idxs, rates, cfg)
+
+    # Elitism: force the current best into slot 0 unchanged
+    best_idx  = jnp.argmax(fitness)
+    elite     = jax.tree_util.tree_map(lambda x: x[best_idx], pop_genomes)
+    offspring = jax.tree_util.tree_map(
+        lambda e, o: o.at[0].set(e), elite, offspring
+    )
+
+    return offspring
+
+
+# ── Per-generation statistics ─────────────────────────────────────────────────
+
+def collect_stats(
+    generation: int,
+    fitness: jnp.ndarray,       # [pop_size]
+    steps: jnp.ndarray,         # [pop_size]
+    pop_genomes: Genome,
+    cfg: Config,
+) -> dict:
+    """
+    Compute summary statistics for the current generation.
+
+    All values are plain Python floats/ints for easy serialisation.
+    """
+    conn_costs = jax.vmap(connection_cost)(pop_genomes)          # [pop_size]
+    n_active   = jnp.sum(pop_genomes.active_mask, axis=-1)       # [pop_size]
+
+    return {
+        "generation":     generation,
+        "max_fitness":    float(jnp.max(fitness)),
+        "mean_fitness":   float(jnp.mean(fitness)),
+        "max_steps":      int(jnp.max(steps)),
+        "mean_steps":     float(jnp.mean(steps)),
+        "mean_n_active":  float(jnp.mean(n_active.astype(jnp.float32))),
+        "mean_conn_cost": float(jnp.mean(conn_costs)),
+    }
+
+
+# ── Full evolutionary run ─────────────────────────────────────────────────────
+
+def run_evolution(
+    key: jax.Array,
+    n_generations: int,
+    cfg: Config,
+    wcfg: WorldConfig,
+    rates: MutationRates,
+    n_evals: int = 5,
+    callback=None,
+) -> tuple[Genome, jnp.ndarray, list[dict]]:
+    """
+    Drive the full evolutionary loop.
+
+    Each generation:
+      1. Collect stats on the current evaluated population.
+      2. (Optional) call callback(stats).
+      3. evolve_step  -> new unevaluated offspring.
+      4. eval_population + compute_fitness on offspring.
+
+    Parameters
+    ----------
+    key           : JAX PRNGKey
+    n_generations : number of generations to run
+    cfg           : network / evolution hyperparameters
+    wcfg          : world parameters
+    rates         : mutation operator intensities
+    n_evals       : episodes per fitness estimate (averaged for stability)
+    callback      : optional callable(stats_dict) fired once per generation
+
+    Returns
+    -------
+    best_genome    : single Genome (unbatched) with highest final fitness
+    final_fitness  : float32 [pop_size] fitness of the last generation
+    history        : list of stats dicts, one per generation
+    """
+    # ── Initialise ───────────────────────────────────────────────────────────
+    key, k_init, k_eval = jax.random.split(key, 3)
+    pop           = init_population(k_init, cfg)
+    steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
+    fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+
+    history: list[dict] = []
+
+    # ── Generation loop ───────────────────────────────────────────────────────
+    for gen in range(n_generations):
+        # Stats on current (already-evaluated) population
+        stats = collect_stats(gen, fitness, steps, pop, cfg)
+        history.append(stats)
+        if callback is not None:
+            callback(stats)
+
+        # Evolve → evaluate
+        key, k_step, k_eval = jax.random.split(key, 3)
+        pop           = evolve_step(k_step, pop, fitness, rates, cfg)
+        steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
+        fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+
+    # ── Extract best genome (unbatched) ──────────────────────────────────────
+    best_idx    = int(jnp.argmax(fitness))
+    best_genome = jax.tree_util.tree_map(lambda x: x[best_idx], pop)
+
+    return best_genome, fitness, history
