@@ -10,6 +10,12 @@ from .evolution import (
     tournament_select_idx, select_parents, reproduce,
     evolve_step, collect_stats, run_evolution,
 )
+from .logger import (
+    make_run_dir, save_config, load_config,
+    save_genome, load_genome,
+    append_history, load_history,
+    make_logger,
+)
 from .mutation import (
     MutationRates,
     perturb_weights, perturb_tau, perturb_bias, perturb_position,

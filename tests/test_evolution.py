@@ -294,7 +294,7 @@ def test_run_evolution_generation_indices(cfg, wcfg, rates):
 def test_run_evolution_callback_called(cfg, wcfg, rates):
     key   = jax.random.PRNGKey(33)
     calls = []
-    run_evolution(key, 3, cfg, wcfg, rates, n_evals=2, callback=lambda s: calls.append(s))
+    run_evolution(key, 3, cfg, wcfg, rates, n_evals=2, callback=lambda s, g: calls.append(s))
     assert len(calls) == 3, f"Callback called {len(calls)} times, expected 3"
 
 def test_run_evolution_returns_valid_best_genome(cfg, wcfg, rates):

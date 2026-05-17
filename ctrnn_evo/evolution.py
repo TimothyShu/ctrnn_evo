@@ -294,7 +294,9 @@ def run_evolution(
         stats = collect_stats(gen, fitness, steps, pop, cfg)
         history.append(stats)
         if callback is not None:
-            callback(stats)
+            best_idx_cb = int(jnp.argmax(fitness))
+            best_cb     = jax.tree_util.tree_map(lambda x: x[best_idx_cb], pop)
+            callback(stats, best_cb)
 
         # Evolve → evaluate
         key, k_step, k_eval = jax.random.split(key, 3)
