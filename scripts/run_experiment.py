@@ -49,6 +49,7 @@ from ctrnn_evo import Config, WorldConfig
 from ctrnn_evo.mutation import MutationRates
 from ctrnn_evo.evolution import (
     init_population, eval_population, compute_fitness, run_evolution,
+    fitness_threshold, convergence_stop,
 )
 from ctrnn_evo.analysis import analyse_genome
 from ctrnn_evo.logger import make_run_dir, save_config, make_logger
@@ -68,6 +69,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lambda-conn",   type=float, default=0.001,  help="connection cost coefficient for modular condition")
     p.add_argument("--output-dir",    type=str,   default="runs/m8", help="root directory for all run output")
     p.add_argument("--seed",          type=int,   default=0,      help="base random seed")
+    p.add_argument("--fitness-threshold",  type=float, default=None,
+                   help="stop a replicate early when max_fitness reaches this value (e.g. 0.95)")
+    p.add_argument("--convergence-window", type=int,   default=None,
+                   help="stop when max_fitness hasn't improved by --convergence-tol over this many generations")
+    p.add_argument("--convergence-tol",    type=float, default=1e-3,
+                   help="minimum improvement required within --convergence-window (default: 0.001)")
     p.add_argument("--verbose",       action="store_true",        help="print per-generation progress")
     p.add_argument("--smoke-test",    action="store_true",        help="quick run: 2 replicates × 5 generations × 1 eval")
     return p.parse_args()
@@ -104,6 +111,7 @@ def run_condition(
     output_dir: Path,
     rep_keys: list[jax.Array],
     verbose: bool,
+    early_stop_fn=None,
 ) -> list[dict]:
     """
     Run all replicates for one condition.  Returns a list of result dicts.
@@ -124,14 +132,19 @@ def run_condition(
         best_genome, final_fitness, history = run_evolution(
             rep_key, n_generations, cfg, wcfg, rates,
             n_evals=n_evals, callback=cb,
+            # early_stop_fn is a factory so each replicate gets its own
+            # independent state (convergence_stop tracks its own window)
+            early_stop_fn=early_stop_fn() if callable(early_stop_fn) else early_stop_fn,
         )
         elapsed = time.perf_counter() - t0
 
         metrics = analyse_genome(best_genome, cfg)
 
+        generations_run = len(history)
         result = {
             "condition":           condition_name,
             "replicate":           rep,
+            "generations_run":     generations_run,
             "final_max_fitness":   history[-1]["max_fitness"],
             "final_mean_fitness":  history[-1]["mean_fitness"],
             "mean_final_fitness":  float(jnp.mean(final_fitness)),
@@ -143,11 +156,13 @@ def run_condition(
         }
         results.append(result)
 
+        stopped_early = generations_run < n_generations
         print(
             f"    → Q={result['best_q']:.3f}  "
             f"fit={result['final_max_fitness']:.3f}  "
             f"n_active={result['best_n_active']}  "
             f"({elapsed / 60:.1f} min)"
+            + (f"  [stopped at gen {generations_run}]" if stopped_early else "")
         )
 
     return results
@@ -248,6 +263,20 @@ def main() -> None:
     print(f"  lambda_conn     = 0.0  (baseline)  vs  {args.lambda_conn}  (modular)")
     print(f"  output_dir      = {output_dir.resolve()}\n")
 
+    # ── Early stop function ───────────────────────────────────────────────────
+    # Build a factory (called once per replicate) so each replicate gets
+    # independent state (convergence_stop tracks its own sliding window).
+    if args.fitness_threshold is not None:
+        _threshold = args.fitness_threshold
+        early_stop_factory = lambda: fitness_threshold(_threshold)
+        print(f"  early_stop      = fitness_threshold({args.fitness_threshold})\n")
+    elif args.convergence_window is not None:
+        _window, _tol = args.convergence_window, args.convergence_tol
+        early_stop_factory = lambda: convergence_stop(_window, _tol)
+        print(f"  early_stop      = convergence_stop(window={_window}, tol={_tol})\n")
+    else:
+        early_stop_factory = None
+
     t_total = time.perf_counter()
     all_results: list[dict] = []
 
@@ -264,6 +293,7 @@ def main() -> None:
         output_dir=output_dir,
         rep_keys=baseline_keys,
         verbose=args.verbose,
+        early_stop_fn=early_stop_factory,
     )
 
     # ── Modular condition ─────────────────────────────────────────────────────
@@ -279,6 +309,7 @@ def main() -> None:
         output_dir=output_dir,
         rep_keys=modular_keys,
         verbose=args.verbose,
+        early_stop_fn=early_stop_factory,
     )
 
     # ── Summary ───────────────────────────────────────────────────────────────

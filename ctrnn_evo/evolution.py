@@ -254,31 +254,42 @@ def run_evolution(
     rates: MutationRates,
     n_evals: int = 5,
     callback=None,
+    early_stop_fn=None,
 ) -> tuple[Genome, jnp.ndarray, list[dict]]:
     """
     Drive the full evolutionary loop.
 
     Each generation:
       1. Collect stats on the current evaluated population.
-      2. (Optional) call callback(stats).
-      3. evolve_step  -> new unevaluated offspring.
-      4. eval_population + compute_fitness on offspring.
+      2. (Optional) call callback(stats, best_genome).
+      3. (Optional) call early_stop_fn(stats) — halt if it returns True.
+      4. evolve_step  -> new unevaluated offspring.
+      5. eval_population + compute_fitness on offspring.
 
     Parameters
     ----------
-    key           : JAX PRNGKey
-    n_generations : number of generations to run
-    cfg           : network / evolution hyperparameters
-    wcfg          : world parameters
-    rates         : mutation operator intensities
-    n_evals       : episodes per fitness estimate (averaged for stability)
-    callback      : optional callable(stats_dict) fired once per generation
+    key            : JAX PRNGKey
+    n_generations  : maximum number of generations to run
+    cfg            : network / evolution hyperparameters
+    wcfg           : world parameters
+    rates          : mutation operator intensities
+    n_evals        : episodes per fitness estimate (averaged for stability)
+    callback       : optional callable(stats, best_genome) fired each generation
+    early_stop_fn  : optional callable(stats) -> bool; return True to stop early.
+                     The run exits cleanly after the current generation's stats
+                     and callback have fired — best_genome and history up to that
+                     point are returned as normal.
+
+                     Built-in helpers (importable from ctrnn_evo.evolution):
+                       fitness_threshold(min_fitness)   — stop when max_fitness >= value
+                       convergence_stop(window, tol)    — stop when max_fitness hasn't
+                                                          improved by tol in last window gens
 
     Returns
     -------
     best_genome    : single Genome (unbatched) with highest final fitness
-    final_fitness  : float32 [pop_size] fitness of the last generation
-    history        : list of stats dicts, one per generation
+    final_fitness  : float32 [pop_size] fitness of the last completed generation
+    history        : list of stats dicts, one per completed generation
     """
     # ── Initialise ───────────────────────────────────────────────────────────
     key, k_init, k_eval = jax.random.split(key, 3)
@@ -293,10 +304,15 @@ def run_evolution(
         # Stats on current (already-evaluated) population
         stats = collect_stats(gen, fitness, steps, pop, cfg)
         history.append(stats)
+
         if callback is not None:
             best_idx_cb = int(jnp.argmax(fitness))
             best_cb     = jax.tree_util.tree_map(lambda x: x[best_idx_cb], pop)
             callback(stats, best_cb)
+
+        # Early exit — check after callback so the final state is fully logged
+        if early_stop_fn is not None and early_stop_fn(stats):
+            break
 
         # Evolve → evaluate
         key, k_step, k_eval = jax.random.split(key, 3)
@@ -309,3 +325,37 @@ def run_evolution(
     best_genome = jax.tree_util.tree_map(lambda x: x[best_idx], pop)
 
     return best_genome, fitness, history
+
+
+# ── Built-in early-stop helpers ───────────────────────────────────────────────
+
+def fitness_threshold(min_fitness: float):
+    """
+    Stop when max_fitness reaches or exceeds min_fitness.
+
+    Example — stop once the best genome survives 95% of the episode:
+        early_stop_fn=fitness_threshold(0.95)
+    """
+    def _check(stats: dict) -> bool:
+        return stats["max_fitness"] >= min_fitness
+    return _check
+
+
+def convergence_stop(window: int = 50, tol: float = 1e-3):
+    """
+    Stop when max_fitness has not improved by more than tol over the last
+    window generations.  Requires at least window generations to have run.
+
+    Example — stop if fitness plateaus for 100 generations:
+        early_stop_fn=convergence_stop(window=100, tol=1e-3)
+    """
+    recent: list[float] = []
+
+    def _check(stats: dict) -> bool:
+        recent.append(stats["max_fitness"])
+        if len(recent) < window:
+            return False
+        improvement = recent[-1] - recent[-window]
+        return improvement < tol
+
+    return _check

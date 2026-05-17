@@ -9,6 +9,7 @@ from .evolution import (
     init_population, eval_population, compute_fitness,
     tournament_select_idx, select_parents, reproduce,
     evolve_step, collect_stats, run_evolution,
+    fitness_threshold, convergence_stop,
 )
 from .analysis import (
     modularity_q, network_stats,
