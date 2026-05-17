@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($python = \"C:\\\\Users\\\\Tim\\\\.pyenv\\\\pyenv-win\\\\versions\\\\3.11.9\\\\python.exe\"; Set-Location \"C:\\\\Users\\\\Tim\\\\Documents\\\\AI Reaserch\\\\ctrnn_evo\"; & $python -m pytest tests/ -v --tb=short 2>&1)"
+    ]
+  }
+}
