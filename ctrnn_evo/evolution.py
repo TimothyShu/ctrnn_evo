@@ -40,12 +40,15 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
+from pathlib import Path
+
 from .config import Config
 from .genome import Genome, random_genome
 from .mutation import MutationRates, mutate
 from .cost import connection_cost, adjusted_fitness
 from .world import WorldConfig
 from .brain import run_brain_episode_full
+from .logger import save_training_state, load_training_state
 
 
 # ── Population initialisation ─────────────────────────────────────────────────
@@ -254,49 +257,96 @@ def run_evolution(
     rates: MutationRates,
     n_evals: int = 5,
     callback=None,
+    early_stop_fn=None,
+    resume_from: "str | Path | None" = None,
+    state_checkpoint_dir: "str | Path | None" = None,
+    state_checkpoint_every: int = 100,
 ) -> tuple[Genome, jnp.ndarray, list[dict]]:
     """
     Drive the full evolutionary loop.
 
     Each generation:
       1. Collect stats on the current evaluated population.
-      2. (Optional) call callback(stats).
-      3. evolve_step  -> new unevaluated offspring.
-      4. eval_population + compute_fitness on offspring.
+      2. (Optional) call callback(stats, best_genome).
+      3. (Optional) call early_stop_fn(stats) — halt if it returns True.
+      4. evolve_step  -> new unevaluated offspring.
+      5. eval_population + compute_fitness on offspring.
+      6. (Optional) save full training state for resume capability.
 
     Parameters
     ----------
-    key           : JAX PRNGKey
-    n_generations : number of generations to run
-    cfg           : network / evolution hyperparameters
-    wcfg          : world parameters
-    rates         : mutation operator intensities
-    n_evals       : episodes per fitness estimate (averaged for stability)
-    callback      : optional callable(stats_dict) fired once per generation
+    key            : JAX PRNGKey
+    n_generations  : maximum number of generations to run
+    cfg            : network / evolution hyperparameters
+    wcfg           : world parameters
+    rates          : mutation operator intensities
+    n_evals        : episodes per fitness estimate (averaged for stability)
+    callback       : optional callable(stats, best_genome) fired each generation
+    early_stop_fn  : optional callable(stats) -> bool; return True to stop early.
+                     The run exits cleanly after the current generation's stats
+                     and callback have fired — best_genome and history up to that
+                     point are returned as normal.
+
+                     Built-in helpers (importable from ctrnn_evo.evolution):
+                       fitness_threshold(min_fitness)   — stop when max_fitness >= value
+                       convergence_stop(window, tol)    — stop when max_fitness hasn't
+                                                          improved by tol in last window gens
+
+    resume_from    : path to a state_gen_*.npz written by a previous run.
+                     When provided the ``key`` argument is ignored — the saved
+                     RNG state is used instead.  The loop resumes from the
+                     saved generation number; history returned covers only the
+                     newly-completed generations.  Use load_history(run_dir) to
+                     read the full history including pre-resume generations.
+                     Shortcut: pass latest_state_checkpoint(run_dir) directly.
+
+    state_checkpoint_dir  : directory to write state_gen_*.npz snapshots into
+                            (typically run_dir / "checkpoints").  If None,
+                            state snapshots are not saved.
+
+    state_checkpoint_every : save a state snapshot every this many generations
+                             (default 100).  Only used when state_checkpoint_dir
+                             is set.
 
     Returns
     -------
     best_genome    : single Genome (unbatched) with highest final fitness
-    final_fitness  : float32 [pop_size] fitness of the last generation
-    history        : list of stats dicts, one per generation
+    final_fitness  : float32 [pop_size] fitness of the last completed generation
+    history        : list of stats dicts, one per completed generation
+                     (from start_gen to the last completed generation)
     """
-    # ── Initialise ───────────────────────────────────────────────────────────
-    key, k_init, k_eval = jax.random.split(key, 3)
-    pop           = init_population(k_init, cfg)
-    steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
-    fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+    # ── Initialise or resume ─────────────────────────────────────────────────
+    if resume_from is not None:
+        pop, fitness, steps, key, start_gen = load_training_state(resume_from)
+        print(f"  Resuming from generation {start_gen} "
+              f"(loaded {Path(resume_from).name})")
+    else:
+        start_gen = 0
+        key, k_init, k_eval = jax.random.split(key, 3)
+        pop           = init_population(k_init, cfg)
+        steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
+        fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
 
     history: list[dict] = []
 
+    if state_checkpoint_dir is not None:
+        state_checkpoint_dir = Path(state_checkpoint_dir)
+        state_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
     # ── Generation loop ───────────────────────────────────────────────────────
-    for gen in range(n_generations):
+    for gen in range(start_gen, n_generations):
         # Stats on current (already-evaluated) population
         stats = collect_stats(gen, fitness, steps, pop, cfg)
         history.append(stats)
+
         if callback is not None:
             best_idx_cb = int(jnp.argmax(fitness))
             best_cb     = jax.tree_util.tree_map(lambda x: x[best_idx_cb], pop)
             callback(stats, best_cb)
+
+        # Early exit — check after callback so the final state is fully logged
+        if early_stop_fn is not None and early_stop_fn(stats):
+            break
 
         # Evolve → evaluate
         key, k_step, k_eval = jax.random.split(key, 3)
@@ -304,8 +354,51 @@ def run_evolution(
         steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
         fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
 
+        # State snapshot — labelled with the generation about to be collected
+        next_gen = gen + 1
+        if (
+            state_checkpoint_dir is not None
+            and next_gen % state_checkpoint_every == 0
+        ):
+            snap_path = state_checkpoint_dir / f"state_gen_{next_gen:06d}.npz"
+            save_training_state(snap_path, pop, fitness, steps, key, next_gen)
+
     # ── Extract best genome (unbatched) ──────────────────────────────────────
     best_idx    = int(jnp.argmax(fitness))
     best_genome = jax.tree_util.tree_map(lambda x: x[best_idx], pop)
 
     return best_genome, fitness, history
+
+
+# ── Built-in early-stop helpers ───────────────────────────────────────────────
+
+def fitness_threshold(min_fitness: float):
+    """
+    Stop when max_fitness reaches or exceeds min_fitness.
+
+    Example — stop once the best genome survives 95% of the episode:
+        early_stop_fn=fitness_threshold(0.95)
+    """
+    def _check(stats: dict) -> bool:
+        return stats["max_fitness"] >= min_fitness
+    return _check
+
+
+def convergence_stop(window: int = 50, tol: float = 1e-3):
+    """
+    Stop when max_fitness has not improved by more than tol over the last
+    window generations.  Requires at least window generations to have run.
+
+    Example — stop if fitness plateaus for 100 generations:
+        early_stop_fn=convergence_stop(window=100, tol=1e-3)
+    """
+    recent: list[float] = []
+
+    def _check(stats: dict) -> bool:
+        recent.append(stats["max_fitness"])
+        if len(recent) < window:
+            return False
+        improvement = recent[-1] - recent[-window]
+        return improvement < tol
+
+    return _check

@@ -26,6 +26,16 @@ load_history(run_dir) -> list[dict]
 
 make_logger(run_dir, checkpoint_every, verbose) -> callback
     Return callback(stats, best_genome) that logs, saves, and checkpoints.
+
+save_training_state(path, pop, fitness, steps, key, generation) -> None
+    Snapshot the full training state needed to resume an interrupted run.
+
+load_training_state(path) -> (pop, fitness, steps, key, generation)
+    Reconstruct training state from a snapshot written by save_training_state.
+
+latest_state_checkpoint(run_dir) -> Path | None
+    Return the most recent state_gen_*.npz in the checkpoints/ directory,
+    or None if no state snapshots exist.
 """
 
 from __future__ import annotations
@@ -58,6 +68,10 @@ _GENOME_FIELDS = [
     "weight_matrix",
     "edge_mask",
 ]
+
+# Prefix used when packing a batched (population) Genome into a state archive.
+# Distinguishes population fields from scalar arrays (fitness, steps, rng_key).
+_POP_PREFIX = "pop_"
 
 
 # ── Directory management ──────────────────────────────────────────────────────
@@ -213,3 +227,89 @@ def make_logger(
             )
 
     return callback
+
+
+# ── Full training-state snapshots (resume support) ────────────────────────────
+
+def save_training_state(
+    path: str | Path,
+    pop: Genome,
+    fitness: "jax.Array",
+    steps: "jax.Array",
+    key: "jax.Array",
+    generation: int,
+) -> None:
+    """
+    Save the complete training state needed to resume an interrupted run.
+
+    Stores:
+      • All batched genome fields (prefixed with ``pop_``)
+      • fitness  [pop_size] — current adjusted fitness scores
+      • steps    [pop_size] — raw mean step counts (needed for collect_stats)
+      • rng_key  [2]        — current JAX PRNGKey
+      • generation          — the generation number that will be collected NEXT
+                             (i.e. the generation about to run when you resume)
+
+    Typical filename: ``checkpoints/state_gen_{N:06d}.npz``
+
+    Notes
+    -----
+    The population stored here has already been *evaluated* (fitness/steps are
+    current).  On resume, ``run_evolution`` immediately calls ``collect_stats``
+    then continues the generation loop from this point.
+    """
+    arrays: dict[str, np.ndarray] = {}
+
+    # Batched genome fields
+    for field in _GENOME_FIELDS:
+        arrays[_POP_PREFIX + field] = np.array(getattr(pop, field))
+
+    # Scalars and vectors
+    arrays["fitness"]    = np.array(fitness)
+    arrays["steps"]      = np.array(steps)
+    arrays["rng_key"]    = np.array(key)
+    arrays["generation"] = np.array(generation, dtype=np.int64)
+
+    np.savez(str(path), **arrays)
+
+
+def load_training_state(
+    path: str | Path,
+) -> tuple["Genome", "jax.Array", "jax.Array", "jax.Array", int]:
+    """
+    Reconstruct full training state from a snapshot written by save_training_state.
+
+    Returns
+    -------
+    pop        : batched Genome [pop_size]
+    fitness    : float32 [pop_size]
+    steps      : float32 [pop_size]
+    key        : JAX PRNGKey [2]
+    generation : int — generation number to resume from
+    """
+    archive  = np.load(str(path))
+    children = [jnp.array(archive[_POP_PREFIX + field]) for field in _GENOME_FIELDS]
+    pop      = Genome(*children)
+
+    fitness    = jnp.array(archive["fitness"])
+    steps      = jnp.array(archive["steps"])
+    key        = jnp.array(archive["rng_key"])
+    generation = int(archive["generation"])
+
+    return pop, fitness, steps, key, generation
+
+
+def latest_state_checkpoint(run_dir: str | Path) -> "Path | None":
+    """
+    Find the most recent ``state_gen_*.npz`` file in the run's checkpoints dir.
+
+    Returns the Path to the latest file, or None if no state snapshots exist.
+    Useful for automatic resume after a crash:
+
+        state_path = latest_state_checkpoint(run_dir)
+        if state_path:
+            pop, fitness, steps, key, gen = load_training_state(state_path)
+    """
+    ckpt_dir = Path(run_dir) / "checkpoints"
+    candidates = sorted(ckpt_dir.glob("state_gen_*.npz"))
+    return candidates[-1] if candidates else None
