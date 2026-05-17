@@ -10,6 +10,11 @@ from .evolution import (
     tournament_select_idx, select_parents, reproduce,
     evolve_step, collect_stats, run_evolution,
 )
+from .analysis import (
+    modularity_q, network_stats,
+    analyse_genome, analyse_population,
+    summarise_run,
+)
 from .logger import (
     make_run_dir, save_config, load_config,
     save_genome, load_genome,
