@@ -4,6 +4,7 @@ from .forward import forward_pass, batch_forward
 from .cost import connection_cost, adjusted_fitness
 from .world import WorldConfig, WorldState, food_at, sensor_readout, step_world, reset_world, run_episode
 from .controllers import random_walk, nearest_hotspot
+from .brain import run_brain_episode, batch_run_brain_episode, make_ctrnn_controller
 from .mutation import (
     MutationRates,
     perturb_weights, perturb_tau, perturb_bias, perturb_position,
