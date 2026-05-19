@@ -186,7 +186,7 @@ def run_condition(
             "mean_final_fitness":  float(jnp.mean(final_fitness)),
             "best_q":              metrics["q"],
             "best_n_active":       metrics["n_active"],
-            "best_conn_cost":      metrics["connection_cost"],
+            "best_conn_cost":      metrics["wiring_cost"],
             "elapsed_s":           elapsed,
             "run_dir":             str(run_dir),
         }
