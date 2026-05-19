@@ -85,8 +85,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--resume-run-dir",   type=str,   default=None,
                    help="path to an interrupted run directory; the script will auto-detect the "
                         "latest state checkpoint and resume that single replicate.")
-    p.add_argument("--verbose",       action="store_true",        help="print per-generation progress")
-    p.add_argument("--smoke-test",    action="store_true",        help="quick run: 2 replicates × 5 generations × 1 eval")
+    p.add_argument("--condition",      choices=["both", "baseline", "modular"], default="both",
+                   help="which condition(s) to run (default: both)")
+    p.add_argument("--lambda-sweep",   type=float, nargs="+", default=None, metavar="L",
+                   help="test multiple lambda values in one run, each saved to modular_<L>/ subdir "
+                        "(overrides --lambda-conn and --condition)")
+    p.add_argument("--verbose",        action="store_true",       help="print per-generation progress")
+    p.add_argument("--smoke-test",     action="store_true",       help="quick run: 2 replicates × 5 generations × 1 eval")
+    p.add_argument("--quick-test",     action="store_true",       help="lambda sweep validation: 3 replicates × 150 generations × pop=500")
     return p.parse_args()
 
 
@@ -255,6 +261,14 @@ def main() -> None:
         args.pop_size      = 20
         print("Smoke-test mode: 2 replicates × 5 generations × pop=20\n")
 
+    # Quick-test overrides (lambda sweep validation)
+    if args.quick_test:
+        args.n_replicates  = 3
+        args.n_generations = 150
+        args.n_evals       = 3
+        args.pop_size      = 500
+        print("Quick-test mode: 3 replicates × 150 generations × pop=500\n")
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -325,44 +339,90 @@ def main() -> None:
     t_total = time.perf_counter()
     all_results: list[dict] = []
 
-    # ── Baseline condition ────────────────────────────────────────────────────
-    print("── Condition: baseline (lambda_conn=0.0) ──────────────────────")
-    all_results += run_condition(
-        condition_name="baseline",
-        cfg=cfg_baseline,
-        wcfg=wcfg,
-        rates=rates,
-        n_replicates=args.n_replicates,
-        n_generations=args.n_generations,
-        n_evals=args.n_evals,
-        output_dir=output_dir,
-        rep_keys=baseline_keys,
-        verbose=args.verbose,
-        early_stop_fn=early_stop_factory,
-        save_state_every=save_state_every,
-        resume_from=resume_from,
-    )
-
-    # ── Modular condition ─────────────────────────────────────────────────────
-    # If resuming a specific state file, skip the second condition entirely
-    if resume_from is None:
-        print(f"\n── Condition: modular (lambda_conn={args.lambda_conn}) ────────────────")
+    # ── Lambda sweep mode ─────────────────────────────────────────────────────
+    if args.lambda_sweep is not None:
+        # Run baseline once, then each lambda as its own named subdir
+        print("── Condition: baseline (lambda_conn=0.0) ──────────────────────")
         all_results += run_condition(
-            condition_name="modular",
-            cfg=cfg_modular,
+            condition_name="baseline",
+            cfg=cfg_baseline,
             wcfg=wcfg,
             rates=rates,
             n_replicates=args.n_replicates,
             n_generations=args.n_generations,
             n_evals=args.n_evals,
             output_dir=output_dir,
-            rep_keys=modular_keys,
+            rep_keys=baseline_keys,
             verbose=args.verbose,
             early_stop_fn=early_stop_factory,
             save_state_every=save_state_every,
+            resume_from=resume_from,
         )
+        for lam in args.lambda_sweep:
+            cfg_lam = Config(
+                population_size=args.pop_size,
+                lambda_conn=lam,
+                lambda_act=args.lambda_act,
+            )
+            # Derive a deterministic key stream for this lambda from the base seed
+            lam_key = jax.random.fold_in(jax.random.PRNGKey(args.seed), int(lam * 1_000_000))
+            lam_keys = list(jax.random.split(lam_key, args.n_replicates))
+            subdir_name = f"modular_{lam:.4f}".rstrip("0").rstrip(".")
+            print(f"\n── Sweep: {subdir_name} (lambda_conn={lam}) ────────────────")
+            all_results += run_condition(
+                condition_name=subdir_name,
+                cfg=cfg_lam,
+                wcfg=wcfg,
+                rates=rates,
+                n_replicates=args.n_replicates,
+                n_generations=args.n_generations,
+                n_evals=args.n_evals,
+                output_dir=output_dir,
+                rep_keys=lam_keys,
+                verbose=args.verbose,
+                early_stop_fn=early_stop_factory,
+                save_state_every=save_state_every,
+            )
+
     else:
-        print("\n(Skipping modular condition — single-replicate resume mode.)")
+        # ── Baseline condition ────────────────────────────────────────────────
+        if args.condition in ("both", "baseline"):
+            print("── Condition: baseline (lambda_conn=0.0) ──────────────────────")
+            all_results += run_condition(
+                condition_name="baseline",
+                cfg=cfg_baseline,
+                wcfg=wcfg,
+                rates=rates,
+                n_replicates=args.n_replicates,
+                n_generations=args.n_generations,
+                n_evals=args.n_evals,
+                output_dir=output_dir,
+                rep_keys=baseline_keys,
+                verbose=args.verbose,
+                early_stop_fn=early_stop_factory,
+                save_state_every=save_state_every,
+                resume_from=resume_from,
+            )
+
+        # ── Modular condition ─────────────────────────────────────────────────
+        if args.condition in ("both", "modular") and resume_from is None:
+            print(f"\n── Condition: modular (lambda_conn={args.lambda_conn}) ────────────────")
+            all_results += run_condition(
+                condition_name="modular",
+                cfg=cfg_modular,
+                wcfg=wcfg,
+                rates=rates,
+                n_replicates=args.n_replicates,
+                n_generations=args.n_generations,
+                n_evals=args.n_evals,
+                output_dir=output_dir,
+                rep_keys=modular_keys,
+                verbose=args.verbose,
+                early_stop_fn=early_stop_factory,
+                save_state_every=save_state_every,
+            )
+        elif resume_from is not None:
+            print("\n(Skipping modular condition — single-replicate resume mode.)")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     total_elapsed = time.perf_counter() - t_total

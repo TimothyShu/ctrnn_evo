@@ -15,12 +15,12 @@ class WorldConfig:
     # Food hotspots
     n_food:        int   = 3
     hotspot_sigma: float = 5.0    # Gaussian spread (units)
-    hotspot_drift: float = 0.3    # std of per-step random walk of hotspot centres
+    hotspot_drift: float = 0.6    # std of per-step random walk of hotspot centres
 
     # Energy economics
     init_energy:   float = 0.5
-    metabolism:    float = 0.005  # passive drain per world step
-    move_cost:     float = 0.001  # additional drain per unit of speed
+    metabolism:    float = 0.010  # passive drain per world step
+    move_cost:     float = 0.003  # additional drain per unit of speed
     eat_rate:      float = 0.08   # energy gain = eat_rate * clipped_food_density
     max_energy:    float = 1.0
 
