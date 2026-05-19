@@ -1,7 +1,7 @@
 from .config import Config
 from .genome import Genome, random_genome, effective_weights, validate_genome, E, FSI, SII
 from .forward import forward_pass, batch_forward
-from .cost import connection_cost, adjusted_fitness
+from .cost import edge_count_cost, dist_cost, adjusted_fitness
 from .world import WorldConfig, WorldState, food_at, sensor_readout, step_world, reset_world, run_episode
 from .controllers import random_walk, nearest_hotspot
 from .brain import run_brain_episode, run_brain_episode_full, batch_run_brain_episode, make_ctrnn_controller

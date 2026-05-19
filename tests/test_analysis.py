@@ -252,7 +252,7 @@ def test_network_stats_returns_dict(genome, cfg):
 
 def test_network_stats_keys(genome, cfg):
     stats = network_stats(genome, cfg)
-    expected = {"n_active", "n_edges", "density", "mean_weight", "connection_cost"}
+    expected = {"n_active", "n_edges", "density", "mean_weight", "wiring_cost"}
     assert expected <= set(stats.keys()), f"Missing keys: {expected - set(stats.keys())}"
 
 def test_network_stats_n_active_matches_mask(genome, cfg):
@@ -277,9 +277,9 @@ def test_network_stats_density_range(cfg):
         assert 0.0 <= stats["density"] <= 1.0 + 1e-6, \
             f"density {stats['density']:.4f} out of [0, 1]"
 
-def test_network_stats_connection_cost_nonneg(genome, cfg):
+def test_network_stats_wiring_cost_nonneg(genome, cfg):
     stats = network_stats(genome, cfg)
-    assert stats["connection_cost"] >= 0.0
+    assert stats["wiring_cost"] >= 0.0
 
 def test_network_stats_mean_weight_nonneg(genome, cfg):
     stats = network_stats(genome, cfg)
@@ -303,7 +303,7 @@ def test_network_stats_no_edges_mean_weight_zero(cfg):
 
 def test_analyse_genome_keys(genome, cfg):
     result = analyse_genome(genome, cfg)
-    expected = {"q", "n_active", "n_edges", "density", "mean_weight", "connection_cost"}
+    expected = {"q", "n_active", "n_edges", "density", "mean_weight", "wiring_cost"}
     assert expected <= set(result.keys()), f"Missing keys: {expected - set(result.keys())}"
 
 def test_analyse_genome_all_scalars(genome, cfg):
@@ -332,7 +332,7 @@ def test_analyse_population_returns_dict(pop, cfg):
 
 def test_analyse_population_keys(pop, cfg):
     result = analyse_population(pop, cfg)
-    expected = {"q", "n_active", "n_edges", "density", "mean_weight", "connection_cost"}
+    expected = {"q", "n_active", "n_edges", "density", "mean_weight", "wiring_cost"}
     assert expected <= set(result.keys())
 
 def test_analyse_population_list_lengths(pop, cfg):

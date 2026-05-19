@@ -23,8 +23,9 @@ class Config:
     init_edge_density: float = 0.15
 
     # Cost coefficients (0 = disabled)
-    lambda_conn: float = 0.0
-    lambda_act:  float = 0.0
+    lambda_edge: float = 0.0   # penalises edge count regardless of length
+    lambda_dist: float = 0.0   # penalises total wire length (distance-weighted)
+    lambda_act:  float = 0.0   # penalises mean neural activation per tick
 
     # Evolution
     population_size:  int = 1000

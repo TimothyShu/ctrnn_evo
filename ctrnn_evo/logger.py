@@ -124,9 +124,16 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
     def _fix_tuples(d: dict) -> dict:
         return {k: tuple(v) if isinstance(v, list) else v for k, v in d.items()}
 
+    def _migrate(d: dict) -> dict:
+        # lambda_conn was split into lambda_edge + lambda_dist; treat old value as lambda_dist
+        if "lambda_conn" in d and "lambda_dist" not in d:
+            d = dict(d)
+            d["lambda_dist"] = d.pop("lambda_conn")
+        return d
+
     with open(Path(run_dir) / "config.json") as f:
         data = json.load(f)
-    cfg   = Config(**_fix_tuples(data["config"]))
+    cfg   = Config(**_fix_tuples(_migrate(data["config"])))
     wcfg  = WorldConfig(**data["world_config"])
     rates = MutationRates(**data["mutation_rates"])
     return cfg, wcfg, rates

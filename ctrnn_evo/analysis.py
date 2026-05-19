@@ -10,7 +10,7 @@ modularity_q(genome, cfg) -> float
     Newman-Girvan Q score of the absolute effective-weight network.
 
 network_stats(genome, cfg) -> dict
-    n_active, n_edges, density, mean_weight, connection_cost.
+    n_active, n_edges, density, mean_weight, wiring_cost.
 
 analyse_genome(genome, cfg) -> dict
     Flat dict combining modularity_q + network_stats.
@@ -33,7 +33,7 @@ from networkx.algorithms.community import (
 
 from .config import Config
 from .genome import Genome, effective_weights
-from .cost import connection_cost
+from .cost import dist_cost
 
 
 # ── Modularity Q ──────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ def network_stats(genome: Genome, cfg: Config) -> dict:
     n_edges         : int   — active edges between active neuron pairs
     density         : float — n_edges / (n_active*(n_active-1)), or 0.0
     mean_weight     : float — mean |W_eff| over active edges; 0.0 if no edges
-    connection_cost : float — sum of wire lengths (from cost.py)
+    wiring_cost : float — sum of wire lengths (from cost.py)
     """
     active_mask = np.array(genome.active_mask)
     edge_mask   = np.array(genome.edge_mask)
@@ -127,14 +127,14 @@ def network_stats(genome: Genome, cfg: Config) -> dict:
     W_abs = np.abs(W_eff)
     mean_weight = float(W_abs[active_edge_mask].mean()) if n_edges > 0 else 0.0
 
-    c_conn = float(connection_cost(genome))
+    c_conn = float(dist_cost(genome))
 
     return {
         "n_active":        n_active,
         "n_edges":         n_edges,
         "density":         density,
         "mean_weight":     mean_weight,
-        "connection_cost": c_conn,
+        "wiring_cost": c_conn,
     }
 
 
@@ -145,7 +145,7 @@ def analyse_genome(genome: Genome, cfg: Config) -> dict:
     Compute all analysis metrics for one genome.
 
     Returns a flat dict with keys:
-        q, n_active, n_edges, density, mean_weight, connection_cost
+        q, n_active, n_edges, density, mean_weight, wiring_cost
     """
     q     = modularity_q(genome, cfg)
     stats = network_stats(genome, cfg)
@@ -163,14 +163,14 @@ def analyse_population(pop_genomes: Genome, cfg: Config) -> dict[str, list]:
 
     Returns a dict of lists, each of length population_size:
         {"q": [...], "n_active": [...], "n_edges": [...],
-         "density": [...], "mean_weight": [...], "connection_cost": [...]}
+         "density": [...], "mean_weight": [...], "wiring_cost": [...]}
     """
     import jax.tree_util as jtu
 
     pop_size = pop_genomes.active_mask.shape[0]
     results: dict[str, list] = {
         "q": [], "n_active": [], "n_edges": [],
-        "density": [], "mean_weight": [], "connection_cost": [],
+        "density": [], "mean_weight": [], "wiring_cost": [],
     }
 
     for i in range(pop_size):
@@ -232,7 +232,7 @@ def summarise_run(
     final_q_mean         = float(np.mean(q_vals))
     final_q_max          = float(np.max(q_vals))
     final_n_active_mean  = float(np.mean(pop_metrics["n_active"]))
-    final_conn_cost_mean = float(np.mean(pop_metrics["connection_cost"]))
+    final_conn_cost_mean = float(np.mean(pop_metrics["wiring_cost"]))
 
     # --- Best genome ---------------------------------------------------------
     best_metrics  = analyse_genome(best_genome, cfg)

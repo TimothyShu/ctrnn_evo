@@ -45,7 +45,7 @@ from pathlib import Path
 from .config import Config
 from .genome import Genome, random_genome
 from .mutation import MutationRates, mutate
-from .cost import connection_cost, adjusted_fitness
+from .cost import edge_count_cost, dist_cost, adjusted_fitness
 from .world import WorldConfig
 from .brain import run_brain_episode_full
 from .logger import save_training_state, load_training_state
@@ -233,17 +233,19 @@ def collect_stats(
 
     All values are plain Python floats/ints for easy serialisation.
     """
-    conn_costs = jax.vmap(connection_cost)(pop_genomes)          # [pop_size]
+    edge_costs = jax.vmap(edge_count_cost)(pop_genomes)          # [pop_size]
+    wiring_costs = jax.vmap(dist_cost)(pop_genomes)              # [pop_size]
     n_active   = jnp.sum(pop_genomes.active_mask, axis=-1)       # [pop_size]
 
     return {
-        "generation":     generation,
-        "max_fitness":    float(jnp.max(fitness)),
-        "mean_fitness":   float(jnp.mean(fitness)),
-        "max_steps":      int(jnp.max(steps)),
-        "mean_steps":     float(jnp.mean(steps)),
-        "mean_n_active":  float(jnp.mean(n_active.astype(jnp.float32))),
-        "mean_conn_cost": float(jnp.mean(conn_costs)),
+        "generation":       generation,
+        "max_fitness":      float(jnp.max(fitness)),
+        "mean_fitness":     float(jnp.mean(fitness)),
+        "max_steps":        int(jnp.max(steps)),
+        "mean_steps":       float(jnp.mean(steps)),
+        "mean_n_active":    float(jnp.mean(n_active.astype(jnp.float32))),
+        "mean_edge_cost":   float(jnp.mean(edge_costs)),
+        "mean_wiring_cost": float(jnp.mean(wiring_costs)),
     }
 
 

@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 python3 -u scripts/run_experiment.py \
-  --lambda-conn 0.0007 \
+  --lambda-dist 0.0007 \
   --output-dir  runs/m8_hard \
   --n-replicates  10 \
   --n-generations 500 \

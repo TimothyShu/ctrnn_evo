@@ -3,7 +3,7 @@
 scripts/run_experiment.py — M8 Clune 2013 modularity replication.
 
 Runs two conditions in sequence:
-  baseline  — lambda_conn=0.0   (no modularity pressure)
+  baseline  — no cost   (no modularity pressure)
   modular   — lambda_conn=LAMBDA (connection cost penalty)
 
 Each condition is repeated for --n-replicates independent evolutionary runs.
@@ -66,8 +66,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n-generations", type=int,   default=500,    help="generations per run")
     p.add_argument("--n-evals",       type=int,   default=5,      help="episodes per fitness estimate")
     p.add_argument("--pop-size",      type=int,   default=1000,   help="population size")
-    p.add_argument("--lambda-conn",   type=float, default=0.001,  help="connection cost coefficient for modular condition")
-    p.add_argument("--lambda-act",    type=float, default=0.0,    help="activation cost coefficient for modular condition (0 = disabled)")
+    p.add_argument("--lambda-edge",   type=float, default=0.0,    help="edge-count cost coefficient (penalises every edge equally)")
+    p.add_argument("--lambda-dist",   type=float, default=0.001,  help="distance-weighted wiring cost coefficient (penalises long edges more)")
+    p.add_argument("--lambda-act",    type=float, default=0.0,    help="activation cost coefficient (penalises mean firing per tick)")
     p.add_argument("--output-dir",    type=str,   default="runs/m8", help="root directory for all run output")
     p.add_argument("--seed",          type=int,   default=0,      help="base random seed")
     p.add_argument("--fitness-threshold",  type=float, default=None,
@@ -279,12 +280,11 @@ def main() -> None:
 
     cfg_baseline = Config(
         population_size=args.pop_size,
-        lambda_conn=0.0,
-        lambda_act=0.0,
     )
     cfg_modular = Config(
         population_size=args.pop_size,
-        lambda_conn=args.lambda_conn,
+        lambda_edge=args.lambda_edge,
+        lambda_dist=args.lambda_dist,
         lambda_act=args.lambda_act,
     )
 
@@ -303,7 +303,8 @@ def main() -> None:
     print(f"Experiment: {args.n_replicates} replicates × {args.n_generations} generations")
     print(f"  population_size = {args.pop_size}")
     print(f"  n_evals         = {args.n_evals}")
-    print(f"  lambda_conn     = 0.0  (baseline)  vs  {args.lambda_conn}  (modular)")
+    print(f"  lambda_edge     = 0.0  (baseline)  vs  {args.lambda_edge}  (modular)")
+    print(f"  lambda_dist     = 0.0  (baseline)  vs  {args.lambda_dist}  (modular)")
     print(f"  lambda_act      = 0.0  (baseline)  vs  {args.lambda_act}  (modular)")
     print(f"  output_dir      = {output_dir.resolve()}\n")
 
@@ -342,7 +343,7 @@ def main() -> None:
     # ── Lambda sweep mode ─────────────────────────────────────────────────────
     if args.lambda_sweep is not None:
         # Run baseline once, then each lambda as its own named subdir
-        print("── Condition: baseline (lambda_conn=0.0) ──────────────────────")
+        print("── Condition: baseline (no cost) ──────────────────────")
         all_results += run_condition(
             condition_name="baseline",
             cfg=cfg_baseline,
@@ -361,14 +362,14 @@ def main() -> None:
         for lam in args.lambda_sweep:
             cfg_lam = Config(
                 population_size=args.pop_size,
-                lambda_conn=lam,
+                lambda_dist=lam,
                 lambda_act=args.lambda_act,
             )
             # Derive a deterministic key stream for this lambda from the base seed
             lam_key = jax.random.fold_in(jax.random.PRNGKey(args.seed), int(lam * 1_000_000))
             lam_keys = list(jax.random.split(lam_key, args.n_replicates))
             subdir_name = f"modular_{lam:.4f}".rstrip("0").rstrip(".")
-            print(f"\n── Sweep: {subdir_name} (lambda_conn={lam}) ────────────────")
+            print(f"\n── Sweep: {subdir_name} (lambda_dist={lam}) ────────────────")
             all_results += run_condition(
                 condition_name=subdir_name,
                 cfg=cfg_lam,
@@ -387,7 +388,7 @@ def main() -> None:
     else:
         # ── Baseline condition ────────────────────────────────────────────────
         if args.condition in ("both", "baseline"):
-            print("── Condition: baseline (lambda_conn=0.0) ──────────────────────")
+            print("── Condition: baseline (no cost) ──────────────────────")
             all_results += run_condition(
                 condition_name="baseline",
                 cfg=cfg_baseline,
@@ -406,7 +407,7 @@ def main() -> None:
 
         # ── Modular condition ─────────────────────────────────────────────────
         if args.condition in ("both", "modular") and resume_from is None:
-            print(f"\n── Condition: modular (lambda_conn={args.lambda_conn}) ────────────────")
+            print(f"\n── Condition: modular (edge={args.lambda_edge} dist={args.lambda_dist} act={args.lambda_act}) ──")
             all_results += run_condition(
                 condition_name="modular",
                 cfg=cfg_modular,

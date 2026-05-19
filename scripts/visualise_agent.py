@@ -264,7 +264,7 @@ def main():
     genome       = load_genome(run_dir / "best_genome.npz")
 
     active_n = int(np.array(genome.active_mask).sum())
-    print(f"  N_active={active_n}  lambda_conn={cfg.lambda_conn}")
+    print(f"  N_active={active_n}  edge={cfg.lambda_edge}  dist={cfg.lambda_dist}  act={cfg.lambda_act}")
 
     print(f"Running episode (seed={args.seed})...")
     key  = jax.random.PRNGKey(args.seed)

@@ -6,21 +6,29 @@ from .config import Config
 from .genome import Genome
 
 
-def connection_cost(genome: Genome) -> float:
+def edge_count_cost(genome: Genome) -> float:
     """
-    Sum of Euclidean wire lengths over all structurally present, active edges.
+    Count of active edges between active neurons — no spatial weighting.
 
-    Generalises the edge-count cost of Clune et al. (2013) to a spatially
-    embedded substrate where evolved neuron positions determine wire length.
+    Implements the pure connection-count penalty of Clune et al. (2013):
+    every edge costs the same regardless of how long it is.
+    """
+    active_pair = genome.active_mask[:, None] * genome.active_mask[None, :]
+    return jnp.sum(genome.edge_mask * active_pair).astype(jnp.float32)
+
+
+def dist_cost(genome: Genome) -> float:
+    """
+    Sum of Euclidean wire lengths over all active edges — distance-weighted.
+
+    Penalises long axons more than short ones, reflecting the metabolic
+    reality that long-range connections are expensive to build and maintain.
+    Generalises edge_count_cost to spatially embedded networks.
     """
     diff = genome.position[:, None, :] - genome.position[None, :, :]  # [N, N, 2]
     dist = jnp.sqrt(jnp.sum(diff ** 2, axis=-1))                       # [N, N]
-    return jnp.sum(
-        dist
-        * genome.edge_mask
-        * genome.active_mask[:, None]
-        * genome.active_mask[None, :]
-    )
+    active_pair = genome.active_mask[:, None] * genome.active_mask[None, :]
+    return jnp.sum(dist * genome.edge_mask * active_pair)
 
 
 def adjusted_fitness(
@@ -30,11 +38,21 @@ def adjusted_fitness(
     cfg: Config,
 ) -> float:
     """
-    Apply connection and activation cost penalties to raw task fitness.
+    Apply all three cost penalties to raw task fitness.
 
-        f = f_raw - lambda_conn * C_conn - lambda_act * C_act
+        f = f_raw
+            - lambda_edge * C_edge   (edge count)
+            - lambda_dist * C_dist   (total wire length)
+            - lambda_act  * C_act    (mean activation per tick)
 
-    Setting a coefficient to 0.0 disables that cost term entirely.
+    Setting a coefficient to 0.0 disables that term entirely.
+    Any combination of the three can be active simultaneously.
     """
-    c_conn = connection_cost(genome)
-    return f_raw - cfg.lambda_conn * c_conn - cfg.lambda_act * c_act
+    c_edge = edge_count_cost(genome)
+    c_dist = dist_cost(genome)
+    return (
+        f_raw
+        - cfg.lambda_edge * c_edge
+        - cfg.lambda_dist * c_dist
+        - cfg.lambda_act  * c_act
+    )

@@ -65,27 +65,42 @@ def load_condition(condition: str, n_gen_full: int) -> list[dict]:
         final   = history[-1]
 
         reps.append({
-            "run_dir":    run_dir.name,
-            "condition":  condition,
-            "lambda":     cfg.lambda_conn,
-            "q":          metrics["q"],
-            "n_active":   metrics["n_active"],
-            "n_edges":    metrics["n_edges"],
-            "density":    metrics["density"],
-            "conn_cost":  metrics["connection_cost"],
-            "fit_max":    final["max_fitness"],
-            "fit_mean":   final["mean_fitness"],
-            "history":    history,
+            "run_dir":     run_dir.name,
+            "condition":   condition,
+            "lambda_edge": cfg.lambda_edge,
+            "lambda_dist": cfg.lambda_dist,
+            "lambda_act":  cfg.lambda_act,
+            "q":           metrics["q"],
+            "n_active":    metrics["n_active"],
+            "n_edges":     metrics["n_edges"],
+            "density":     metrics["density"],
+            "conn_cost":   metrics["wiring_cost"],
+            "fit_max":     final["max_fitness"],
+            "fit_mean":    final["mean_fitness"],
+            "history":     history,
         })
 
     return reps
 
 
-def group_by_lambda(reps: list[dict]) -> dict[float, list[dict]]:
-    """Group replicate dicts by their lambda_conn value."""
-    groups: dict[float, list[dict]] = {}
+def _condition_key(r: dict) -> tuple:
+    return (r["lambda_edge"], r["lambda_dist"], r["lambda_act"])
+
+
+def _condition_label(key: tuple) -> str:
+    e, d, a = key
+    parts = []
+    if e: parts.append(f"edge={e}")
+    if d: parts.append(f"dist={d}")
+    if a: parts.append(f"act={a}")
+    return ", ".join(parts) if parts else "baseline"
+
+
+def group_by_lambda(reps: list[dict]) -> dict[tuple, list[dict]]:
+    """Group replicate dicts by their (lambda_edge, lambda_dist, lambda_act) tuple."""
+    groups: dict[tuple, list[dict]] = {}
     for r in reps:
-        groups.setdefault(r["lambda"], []).append(r)
+        groups.setdefault(_condition_key(r), []).append(r)
     return dict(sorted(groups.items()))
 
 
@@ -131,25 +146,25 @@ def main() -> None:
     n_baseline     = len(baseline_reps)
     n_mod_total    = len(modular_reps)
     print(f"\nValid replicates - baseline: {n_baseline}, modular: {n_mod_total} "
-          f"({', '.join(f'lambda={l}: {len(r)}' for l, r in modular_groups.items())})\n")
+          f"({', '.join(f'{_condition_label(k)}: {len(r)}' for k, r in modular_groups.items())})\n")
 
     # ── Per-replicate table ───────────────────────────────────────────────────
     print("=" * 82)
     print("PER-REPLICATE SUMMARY")
     print("=" * 82)
-    print(f"{'Run':<45} {'lambda':>7} {'Q':>6} {'Fit':>6} {'Nodes':>6} {'Edges':>6} {'Density':>8}")
+    print(f"{'Run':<45} {'Q':>6} {'Fit':>6} {'Nodes':>6} {'Edges':>6} {'Density':>8}")
     print("-" * 82)
 
     print("  BASELINE")
     for r in baseline_reps:
-        print(f"  {r['run_dir']:<43} {r['lambda']:7.4f} {r['q']:6.3f} "
+        print(f"  {r['run_dir']:<43} {r['q']:6.3f} "
               f"{r['fit_max']:6.3f} {r['n_active']:6d} {r['n_edges']:6d} {r['density']:8.4f}")
     print()
 
-    for lam, reps in modular_groups.items():
-        print(f"  MODULAR  lambda={lam}")
+    for key, reps in modular_groups.items():
+        print(f"  MODULAR  ({_condition_label(key)})")
         for r in reps:
-            print(f"  {r['run_dir']:<43} {r['lambda']:7.4f} {r['q']:6.3f} "
+            print(f"  {r['run_dir']:<43} {r['q']:6.3f} "
                   f"{r['fit_max']:6.3f} {r['n_active']:6d} {r['n_edges']:6d} {r['density']:8.4f}")
         print()
 
@@ -175,12 +190,12 @@ def main() -> None:
         f"{np.mean(b_sum['conn_cost']):.2f}±{np.std(b_sum['conn_cost']):.2f}",
     ))
 
-    for lam, reps in modular_groups.items():
-        key = f"modular_lambda{lam}"
-        s   = summarise(reps)
-        all_summaries[key] = s
+    for key, reps in modular_groups.items():
+        label = _condition_label(key)
+        s     = summarise(reps)
+        all_summaries[label] = s
         print(fmt.format(
-            f"modular lambda={lam}",
+            label[:18],
             f"{np.mean(s['q']):.3f}±{np.std(s['q']):.3f}",
             f"{np.mean(s['fit']):.3f}±{np.std(s['fit']):.3f}",
             f"{np.mean(s['nodes']):.1f}±{np.std(s['nodes']):.1f}",
@@ -196,8 +211,8 @@ def main() -> None:
     metrics_labels = [("q","Q"), ("fit","Fitness"), ("nodes","Nodes"),
                       ("edges","Edges"), ("density","Density"), ("conn_cost","ConnCost")]
 
-    for lam, reps in modular_groups.items():
-        print(f"\n  modular lambda={lam}:")
+    for key, reps in modular_groups.items():
+        print(f"\n  {_condition_label(key)}:")
         s = summarise(reps)
         for metric, label in metrics_labels:
             u, p, sig = mw(b_sum[metric], s[metric])
@@ -209,20 +224,20 @@ def main() -> None:
     print("FITNESS TRAJECTORY - max fitness (mean ± std, every 50 gens)")
     print("=" * 82)
 
-    col_w = 18
+    col_w = 20
     header_parts = [f"{'Gen':>5}"] + [f"{'baseline':>{col_w}}"] + \
-                   [f"{'mod lambda='+str(l):>{col_w}}" for l in modular_groups]
+                   [f"{_condition_label(k):>{col_w}}" for k in modular_groups]
     print(" | ".join(header_parts))
     print("-" * (7 + (col_w + 3) * (1 + len(modular_groups))))
 
     b_max, b_max_std = trajectory(baseline_reps, "max_fitness")
-    mod_traj = {l: trajectory(r, "max_fitness") for l, r in modular_groups.items()}
+    mod_traj = {k: trajectory(r, "max_fitness") for k, r in modular_groups.items()}
 
     step = max(1, n_gen_full // 10)
     for g in list(range(0, n_gen_full, step)) + [n_gen_full - 1]:
         row = [f"{g:5d}"]
         row.append(f"{b_max[g]:.3f}±{b_max_std[g]:.3f}".rjust(col_w))
-        for l, (m, s) in mod_traj.items():
+        for k, (m, s) in mod_traj.items():
             row.append(f"{m[g]:.3f}±{s[g]:.3f}".rjust(col_w))
         print(" | ".join(row))
 
@@ -230,12 +245,12 @@ def main() -> None:
     print("\n" + "=" * 82)
     print("CLUNE 2013 REPLICATION VERDICT")
     print("=" * 82)
-    for lam, reps in modular_groups.items():
+    for key, reps in modular_groups.items():
         s    = summarise(reps)
         dq   = np.mean(s["q"])   - np.mean(b_sum["q"])
         dfit = np.mean(s["fit"]) - np.mean(b_sum["fit"])
         _, pq, _ = mw(b_sum["q"], s["q"])
-        print(f"\n  lambda={lam}:")
+        print(f"\n  {_condition_label(key)}:")
         print(f"    DQ   = {dq:+.4f}  (p={pq:.4f})")
         print(f"    DFit = {dfit:+.4f}")
         if dq > 0.05 and pq < 0.05:
