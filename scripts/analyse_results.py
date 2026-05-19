@@ -56,7 +56,7 @@ def load_condition(condition: str, n_gen_full: int) -> list[dict]:
             continue
         history = load_history(run_dir)
         if len(history) < n_gen_full:
-            print(f"  [skip] {run_dir.name}  ({len(history)} gens — incomplete)")
+            print(f"  [skip] {run_dir.name}  ({len(history)} gens - incomplete)")
             continue
 
         cfg, wcfg, rates = load_config(run_dir)
@@ -130,14 +130,14 @@ def main() -> None:
     modular_groups = group_by_lambda(modular_reps)
     n_baseline     = len(baseline_reps)
     n_mod_total    = len(modular_reps)
-    print(f"\nValid replicates — baseline: {n_baseline}, modular: {n_mod_total} "
-          f"({', '.join(f'λ={l}: {len(r)}' for l, r in modular_groups.items())})\n")
+    print(f"\nValid replicates - baseline: {n_baseline}, modular: {n_mod_total} "
+          f"({', '.join(f'lambda={l}: {len(r)}' for l, r in modular_groups.items())})\n")
 
     # ── Per-replicate table ───────────────────────────────────────────────────
     print("=" * 82)
     print("PER-REPLICATE SUMMARY")
     print("=" * 82)
-    print(f"{'Run':<45} {'λ':>7} {'Q':>6} {'Fit':>6} {'Nodes':>6} {'Edges':>6} {'Density':>8}")
+    print(f"{'Run':<45} {'lambda':>7} {'Q':>6} {'Fit':>6} {'Nodes':>6} {'Edges':>6} {'Density':>8}")
     print("-" * 82)
 
     print("  BASELINE")
@@ -147,7 +147,7 @@ def main() -> None:
     print()
 
     for lam, reps in modular_groups.items():
-        print(f"  MODULAR  λ={lam}")
+        print(f"  MODULAR  lambda={lam}")
         for r in reps:
             print(f"  {r['run_dir']:<43} {r['lambda']:7.4f} {r['q']:6.3f} "
                   f"{r['fit_max']:6.3f} {r['n_active']:6d} {r['n_edges']:6d} {r['density']:8.4f}")
@@ -176,11 +176,11 @@ def main() -> None:
     ))
 
     for lam, reps in modular_groups.items():
-        key = f"modular_λ{lam}"
+        key = f"modular_lambda{lam}"
         s   = summarise(reps)
         all_summaries[key] = s
         print(fmt.format(
-            f"modular λ={lam}",
+            f"modular lambda={lam}",
             f"{np.mean(s['q']):.3f}±{np.std(s['q']):.3f}",
             f"{np.mean(s['fit']):.3f}±{np.std(s['fit']):.3f}",
             f"{np.mean(s['nodes']):.1f}±{np.std(s['nodes']):.1f}",
@@ -197,21 +197,21 @@ def main() -> None:
                       ("edges","Edges"), ("density","Density"), ("conn_cost","ConnCost")]
 
     for lam, reps in modular_groups.items():
-        print(f"\n  modular λ={lam}:")
+        print(f"\n  modular lambda={lam}:")
         s = summarise(reps)
         for metric, label in metrics_labels:
             u, p, sig = mw(b_sum[metric], s[metric])
             delta = np.mean(s[metric]) - np.mean(b_sum[metric])
-            print(f"    {label:<10}  Δ={delta:+.4f}   U={u:.0f}  p={p:.4f}  {sig}")
+            print(f"    {label:<10}  D={delta:+.4f}   U={u:.0f}  p={p:.4f}  {sig}")
 
     # ── Fitness trajectories ──────────────────────────────────────────────────
     print("\n" + "=" * 82)
-    print("FITNESS TRAJECTORY — max fitness (mean ± std, every 50 gens)")
+    print("FITNESS TRAJECTORY - max fitness (mean ± std, every 50 gens)")
     print("=" * 82)
 
     col_w = 18
     header_parts = [f"{'Gen':>5}"] + [f"{'baseline':>{col_w}}"] + \
-                   [f"{'mod λ='+str(l):>{col_w}}" for l in modular_groups]
+                   [f"{'mod lambda='+str(l):>{col_w}}" for l in modular_groups]
     print(" | ".join(header_parts))
     print("-" * (7 + (col_w + 3) * (1 + len(modular_groups))))
 
@@ -235,19 +235,19 @@ def main() -> None:
         dq   = np.mean(s["q"])   - np.mean(b_sum["q"])
         dfit = np.mean(s["fit"]) - np.mean(b_sum["fit"])
         _, pq, _ = mw(b_sum["q"], s["q"])
-        print(f"\n  λ={lam}:")
-        print(f"    ΔQ   = {dq:+.4f}  (p={pq:.4f})")
-        print(f"    ΔFit = {dfit:+.4f}")
+        print(f"\n  lambda={lam}:")
+        print(f"    DQ   = {dq:+.4f}  (p={pq:.4f})")
+        print(f"    DFit = {dfit:+.4f}")
         if dq > 0.05 and pq < 0.05:
-            print("    ✓ Modularity increased significantly.")
+            print("    [YES] Modularity increased significantly.")
         elif dq > 0 and pq >= 0.05:
-            print("    ~ Q trend positive but not significant — more reps/gens needed.")
+            print("    [~] Q trend positive but not significant - more reps/gens needed.")
         else:
-            print("    ✗ Modularity did not increase.")
+            print("    [NO] Modularity did not increase.")
         if abs(dfit) < 0.05:
-            print("    ✓ Fitness preserved (|ΔFit| < 0.05).")
+            print("    [YES] Fitness preserved (|DFit| < 0.05).")
         else:
-            print(f"    △ Fitness changed noticeably: ΔFit={dfit:+.4f}.")
+            print(f"    [^] Fitness changed noticeably: DFit={dfit:+.4f}.")
 
 
 if __name__ == "__main__":
