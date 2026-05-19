@@ -1,0 +1,17 @@
+# Base configuration for run_experiment.py
+# Keys match CLI flag names (without leading --).
+# Job spec overrides: are merged on top of this file.
+
+n-replicates: 10
+n-generations: 500
+n-evals: 5
+pop-size: 1000
+
+# Cost coefficients (all off by default — set in overrides)
+lambda-edge: 0.0
+lambda-dist: 0.0
+lambda-act:  0.0
+
+condition: both
+output-dir: runs/default
+verbose: true

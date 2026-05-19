@@ -1,0 +1,11 @@
+# Example job spec — copy to queue/pending/ to submit.
+# Rename to something descriptive, e.g. phase1a_edge_0007.yaml
+
+config: configs/base_m8.yaml
+
+overrides:
+  lambda-edge: 0.0007
+  lambda-dist: 0.0
+  output-dir:  runs/phase1a_edge_0007
+
+notes: "Phase 1a: pure edge-count cost at lambda=0.0007, 10 reps x 500 gens"
