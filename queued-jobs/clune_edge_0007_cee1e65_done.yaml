@@ -1,0 +1,9 @@
+config: configs/base_m8.yaml
+
+overrides:
+  lambda-edge: 0.0007
+  lambda-dist: 0.0
+  lambda-act:  0.0
+  output-dir:  runs/clune_edge_0007
+
+notes: "Clune replication: pure edge-count cost at lambda=0.0007, both conditions, 10 reps x 500 gens"
