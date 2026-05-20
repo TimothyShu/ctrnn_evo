@@ -1,0 +1,6 @@
+config: configs/base_m8.yaml
+overrides:
+  n-replicates: 2
+  n-generations: 5
+  output-dir: runs/smoke_test_2min
+notes: "2-min smoke test — 2 reps x 5 gens, quick sanity check"
