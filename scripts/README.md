@@ -104,6 +104,8 @@ YAML handles types natively: `0.0007` is float, `10` is int, `true` is a bare fl
 | `fitness-threshold` | float | — |
 | `convergence-window` | int | — |
 
+Typical run (both conditions, 10 reps x 500 gens): ~5 hours on RTX 4080 Super.
+
 ---
 
 ## Monitoring
