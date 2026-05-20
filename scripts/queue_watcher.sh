@@ -8,15 +8,20 @@
 # To cancel a queued job:   tsp -r <job-id>
 # To clear finished jobs:   tsp -C
 
-set -euo pipefail
+# Don't use set -e here: a transient tsp hiccup or failed mv must not kill
+# the watcher — it needs to keep looping and picking up future jobs.
+set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PENDING="$REPO_DIR/queue/pending"
 QUEUED="$REPO_DIR/queue/queued"
 mkdir -p "$PENDING" "$QUEUED"
 
+# Enforce single-job execution — one GPU, no parallelism.
+tsp -S 1
+
 echo "[watcher] started, polling $PENDING every 10s"
-echo "[watcher] tsp queue: $(tsp -l 2>/dev/null | wc -l) jobs"
+echo "[watcher] tsp parallelism: $(tsp -S) slot(s)"
 
 while true; do
     for spec in "$PENDING"/*.yaml "$PENDING"/*.yml; do
@@ -25,13 +30,17 @@ while true; do
 
         SPEC_NAME="$(basename "$spec")"
 
-        # Atomic move to queued/ prevents the watcher from double-submitting
-        # a spec that tsp hasn't started yet (tsp queues asynchronously).
+        # Atomic move to queued/ prevents double-submission if the watcher
+        # loops again before tsp has started the job.
         DEST="$QUEUED/$SPEC_NAME"
-        mv "$spec" "$DEST"
+        if ! mv "$spec" "$DEST" 2>/dev/null; then
+            echo "[watcher] WARNING: could not move $SPEC_NAME (already claimed?), skipping"
+            continue
+        fi
 
         echo "[watcher] submitting: $SPEC_NAME"
-        tsp bash "$REPO_DIR/scripts/run_job.sh" "$DEST"
+        tsp bash "$REPO_DIR/scripts/run_job.sh" "$DEST" || \
+            echo "[watcher] WARNING: tsp submission failed for $SPEC_NAME"
     done
 
     sleep 10

@@ -78,9 +78,17 @@ bash scripts/notify.sh \
   "spec=$SPEC_NAME commit=$COMMIT${NOTES:+$'\n'$NOTES}"
 
 # ── Run experiment ────────────────────────────────────────────────────────────
+mkdir -p logs
+JOB_LOG="logs/${SPEC_NAME%.yaml}_${COMMIT}.log"
+echo "[run_job] logging to $JOB_LOG"
+
 START=$(date +%s)
-EXIT_CODE=0
-python3 -u scripts/run_experiment.py "${ARGS[@]}" 2>&1 || EXIT_CODE=$?
+# Disable set -e for this block: a non-zero exit must reach the archiving
+# and notification code below, not abort the script mid-flight.
+set +e
+python3 -u scripts/run_experiment.py "${ARGS[@]}" 2>&1 | tee "$JOB_LOG"
+EXIT_CODE=${PIPESTATUS[0]}
+set -e
 ELAPSED=$(( ($(date +%s) - START) / 60 ))
 
 # ── Archive spec to done/ or failed/ ─────────────────────────────────────────
