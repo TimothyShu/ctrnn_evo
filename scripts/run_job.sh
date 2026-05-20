@@ -103,6 +103,12 @@ mkdir -p "queue/$STATUS" queued-jobs
 mv "$SPEC" "queue/$STATUS/$DEST_NAME"
 cp "queue/$STATUS/$DEST_NAME" "queued-jobs/$DEST_NAME"
 
+# ── Push archive record to GitHub ─────────────────────────────────────────────
+echo "[run_job] pushing archive to GitHub..."
+git add "queued-jobs/$DEST_NAME"
+git commit -m "archive: $SPEC_NAME [$STATUS] @ $COMMIT (${ELAPSED}m)"
+git push origin main 2>&1 || echo "[run_job] WARNING: git push failed, record saved locally"
+
 echo "[run_job] $STATUS in ${ELAPSED}m  (exit=$EXIT_CODE)  ->  queue/$STATUS/$DEST_NAME"
 
 bash scripts/notify.sh \
