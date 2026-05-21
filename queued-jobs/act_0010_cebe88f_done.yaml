@@ -1,0 +1,10 @@
+config: configs/base_m8.yaml
+
+overrides:
+  lambda-edge: 0.0
+  lambda-dist: 0.0
+  lambda-act:  0.001
+  condition:   modular
+  output-dir:  runs/act_0010
+
+notes: "Activation cost pilot: lambda_act=0.001 (equivalent pressure to dist_0010, penalises mean firing rate per tick), modular only, 10 reps x 500 gens"
