@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell($python = \"C:\\\\Users\\\\Tim\\\\.pyenv\\\\pyenv-win\\\\versions\\\\3.11.9\\\\python.exe\"; Set-Location \"C:\\\\Users\\\\Tim\\\\Documents\\\\AI Reaserch\\\\ctrnn_evo\"; & $python -m pytest tests/ -v --tb=short 2>&1)"
+      "PowerShell($python = \"C:\\\\Users\\\\Tim\\\\.pyenv\\\\pyenv-win\\\\versions\\\\3.11.9\\\\python.exe\"; Set-Location \"C:\\\\Users\\\\Tim\\\\Documents\\\\AI Reaserch\\\\ctrnn_evo\"; & $python -m pytest tests/ -v --tb=short 2>&1)",
+      "Bash(git -C \"/mnt/c/Users/Tim/Documents/AI Research/ctrnn_evo\" show 09c1be2 -- scripts/run_clune_edge.sh)"
     ]
   }
 }
