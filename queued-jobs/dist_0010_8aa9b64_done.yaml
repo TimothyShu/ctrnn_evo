@@ -1,0 +1,10 @@
+config: configs/base_m8.yaml
+
+overrides:
+  lambda-edge: 0.0
+  lambda-dist: 0.001
+  lambda-act:  0.0
+  condition:   modular
+  output-dir:  runs/dist_0010
+
+notes: "Distance cost pilot: lambda_dist=0.001 (moderate, ~equiv to lambda_edge=0.0005), modular only, 10 reps x 500 gens"
