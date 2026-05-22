@@ -1,0 +1,10 @@
+config: configs/base_m8.yaml
+
+overrides:
+  lambda-edge: 0.0
+  lambda-dist: 0.0005
+  lambda-act:  0.0003
+  condition:   modular
+  output-dir:  runs/combo3_dist0005_act0003
+
+notes: "Combination 3: dist=0.0005 (best modularity) + act=0.0003 (best standalone Q above baseline), modular only, 10 reps x 500 gens"
