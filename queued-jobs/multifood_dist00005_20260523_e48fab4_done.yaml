@@ -1,0 +1,7 @@
+config: configs/multifood_m8.yaml
+
+overrides:
+  lambda-dist: 0.00005
+  output-dir: runs/multifood/dist00005
+
+notes: "multifood dist lambda=0.00005 — safe zone (~18% of gen0 fitness), 5x below single-food best"
