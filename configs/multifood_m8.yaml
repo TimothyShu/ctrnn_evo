@@ -1,0 +1,39 @@
+# Base configuration for multi-food-type experiments.
+# Extends base_m8.yaml with settings appropriate for strip-separated food types.
+#
+# ── Job spec template ─────────────────────────────────────────────────────────
+#
+# config: configs/multifood_m8.yaml
+#
+# overrides:
+#   lambda-edge: 0.0
+#   lambda-dist: 0.0
+#   lambda-act:  0.0
+#   output-dir: runs/<descriptive_name>
+#   n-replicates: 10
+#   n-generations: 500
+#
+# notes: "Short description for ntfy notification"
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+n-replicates: 10
+n-generations: 500
+n-evals: 5
+pop-size: 1000
+
+# Food type structure
+n-food-types: 2
+
+# Slower drift keeps type strips spatially separated through the episode.
+# With drift=0.2, RMS displacement over 2000 steps ≈ 9 units (strip width = 50).
+hotspot-drift: 0.2
+
+# Cost coefficients (set in overrides)
+lambda-edge: 0.0
+lambda-dist: 0.0
+lambda-act:  0.0
+
+condition: both
+output-dir: runs/multifood/default
+verbose: true

@@ -6,7 +6,7 @@ from ctrnn_evo import Config, Genome, random_genome, validate_genome, E, FSI, SI
 
 @pytest.fixture
 def cfg():
-    return Config(N_max=16, n_in=2, n_out=2)
+    return Config(N_max=16, n_out=2)
 
 
 def test_random_genome_is_valid(cfg):

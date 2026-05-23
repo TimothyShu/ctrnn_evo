@@ -12,20 +12,21 @@ class WorldConfig:
     # Arena
     arena_size:    float = 100.0
 
-    # Food hotspots
-    n_food:        int   = 3
-    hotspot_sigma: float = 5.0    # Gaussian spread (units)
-    hotspot_drift: float = 0.6    # std of per-step random walk of hotspot centres
+    # Food
+    n_food_types:  int   = 1     # distinct food types; each has n_food hotspots
+    n_food:        int   = 3     # hotspots per type
+    hotspot_sigma: float = 5.0   # Gaussian spread (units)
+    hotspot_drift: float = 0.6   # std of per-step random walk of hotspot centres
 
     # Energy economics
     init_energy:   float = 0.5
-    metabolism:    float = 0.010  # passive drain per world step
-    move_cost:     float = 0.003  # additional drain per unit of speed
+    metabolism:    float = 0.010  # passive drain per world step (all energy types equally)
+    move_cost:     float = 0.003  # additional drain per unit of speed (all energy types)
     eat_rate:      float = 0.08   # energy gain = eat_rate * clipped_food_density
     max_energy:    float = 1.0
 
     # Agent physics
-    max_speed:     float = 3.0    # units per world step
+    max_speed:     float = 3.0   # units per world step
 
     # Episode
     episode_steps: int   = 2000
@@ -39,11 +40,14 @@ class WorldState:
     All mutable world state for one episode step.
 
     Registered as a JAX pytree so jit / lax.scan can look inside.
+
+    agent_energy : [n_food_types]            one energy resource per food type
+    hotspot_pos  : [n_food_types, n_food, 2] hotspot centres per type
     """
-    agent_pos:    jnp.ndarray  # [2]           float32 — position in [0, arena_size]²
-    agent_energy: jnp.ndarray  # []            float32 — in [0, max_energy]
-    hotspot_pos:  jnp.ndarray  # [n_food, 2]   float32 — hotspot centres
-    step:         jnp.ndarray  # []            int32
+    agent_pos:    jnp.ndarray  # [2]                       float32 — position in [0, arena_size]²
+    agent_energy: jnp.ndarray  # [n_food_types]            float32 — each in [0, max_energy]
+    hotspot_pos:  jnp.ndarray  # [n_food_types, n_food, 2] float32 — hotspot centres
+    step:         jnp.ndarray  # []                        int32
     rng_key:      jax.Array    # PRNG key for stochastic drift
 
 
@@ -65,13 +69,13 @@ def food_at(
     wcfg: WorldConfig,
 ) -> jnp.ndarray:
     """
-    Raw food density at pos: sum of Gaussians centred at each hotspot.
+    Raw food density at pos from one type's hotspots: sum of Gaussians.
 
-    Returns values in [0, n_food].  Clip to [0, 1] for sensor / energy use
-    (one hotspot at its own centre contributes exactly 1.0).
+    hotspot_pos : [n_food, 2] — centres for a single food type.
+    Returns values in [0, n_food].  Clip to [0, 1] for sensor / energy use.
     """
-    diff    = pos[None, :] - hotspot_pos                             # [n_food, 2]
-    sq_dist = jnp.sum(diff ** 2, axis=-1)                            # [n_food]
+    diff    = pos[None, :] - hotspot_pos                              # [n_food, 2]
+    sq_dist = jnp.sum(diff ** 2, axis=-1)                             # [n_food]
     return jnp.sum(jnp.exp(-sq_dist / (2.0 * wcfg.hotspot_sigma ** 2)))
 
 
@@ -79,14 +83,17 @@ def food_at(
 
 def sensor_readout(state: WorldState, wcfg: WorldConfig) -> jnp.ndarray:
     """
-    Returns [food_density, energy_level] both normalised to [0, 1].
+    Returns [food_0, ..., food_{T-1}, energy_0, ..., energy_{T-1}] (length 2*n_food_types),
+    all normalised to [0, 1].
 
-    food_density: clipped raw food value — saturates at 1 near any hotspot.
-    energy_level: agent_energy / max_energy.
+    With n_food_types=1 this is [food_density, energy_level] — identical to the
+    original two-sensor interface.
     """
-    food_norm  = jnp.clip(food_at(state.agent_pos, state.hotspot_pos, wcfg), 0.0, 1.0)
-    energy_norm = state.agent_energy / wcfg.max_energy
-    return jnp.array([food_norm, energy_norm])
+    food_norms = jax.vmap(
+        lambda hpos: jnp.clip(food_at(state.agent_pos, hpos, wcfg), 0.0, 1.0)
+    )(state.hotspot_pos)                                   # [n_food_types]
+    energy_norms = state.agent_energy / wcfg.max_energy   # [n_food_types]
+    return jnp.concatenate([food_norms, energy_norms])    # [2 * n_food_types]
 
 
 # ── World step ────────────────────────────────────────────────────────────────
@@ -101,19 +108,27 @@ def step_world(
 
     action: [v_x, v_y] in [-1, 1]; scaled by max_speed internally.
     Boundary: reflective clamp (agent cannot leave the arena).
+
+    Each energy type is replenished only by its own hotspots.
+    Metabolism and movement cost drain all energy types equally.
+    The agent is alive only while ALL energy types are > 0.
     """
     # --- Physics ---
     v       = jnp.clip(action, -1.0, 1.0) * wcfg.max_speed
     speed   = jnp.sqrt(jnp.sum(v ** 2))
     new_pos = jnp.clip(state.agent_pos + v, 0.0, wcfg.arena_size)
 
-    # --- Energy ---
-    food_norm  = jnp.clip(food_at(new_pos, state.hotspot_pos, wcfg), 0.0, 1.0)
-    gained     = wcfg.eat_rate * food_norm
-    lost       = wcfg.metabolism + wcfg.move_cost * speed
-    new_energy = jnp.clip(state.agent_energy + gained - lost, 0.0, wcfg.max_energy)
+    # --- Energy (per type via vmap) ---
+    lost = wcfg.metabolism + wcfg.move_cost * speed  # shared drain applied to each type
 
-    # --- Hotspot drift ---
+    def update_energy(energy_i: jnp.ndarray, hotspot_pos_i: jnp.ndarray) -> jnp.ndarray:
+        food_norm = jnp.clip(food_at(new_pos, hotspot_pos_i, wcfg), 0.0, 1.0)
+        gained    = wcfg.eat_rate * food_norm
+        return jnp.clip(energy_i + gained - lost, 0.0, wcfg.max_energy)
+
+    new_energy = jax.vmap(update_energy)(state.agent_energy, state.hotspot_pos)
+
+    # --- Hotspot drift (all types) ---
     key, subkey  = jax.random.split(state.rng_key)
     noise        = jax.random.normal(subkey, state.hotspot_pos.shape) * wcfg.hotspot_drift
     new_hotspots = jnp.clip(state.hotspot_pos + noise, 0.0, wcfg.arena_size)
@@ -130,12 +145,33 @@ def step_world(
 # ── Episode initialisation ────────────────────────────────────────────────────
 
 def reset_world(key: jax.Array, wcfg: WorldConfig) -> WorldState:
-    """Initialise a fresh episode with random agent position and hotspot layout."""
+    """Initialise a fresh episode with random agent position and hotspot layout.
+
+    Hotspots are placed in non-overlapping Y-axis strips: food type i is
+    confined to [i/T, (i+1)/T] * arena_size at episode start.  X coordinates
+    are drawn from the full arena width.  This guarantees cross-type spatial
+    separation, creating genuine modular task structure.  With n_food_types=1
+    the strip spans the full arena and behaviour is identical to uniform sampling.
+    """
     k1, k2, k3 = jax.random.split(key, 3)
+
+    # Raw uniform samples in [0, 1]^3: [n_food_types, n_food, 2]
+    raw = jax.random.uniform(k2, (wcfg.n_food_types, wcfg.n_food, 2))
+
+    # Y-strip boundaries per type: shape [n_food_types, 1, 1]
+    T       = wcfg.n_food_types
+    strip_h = wcfg.arena_size / T
+    lo_y    = (jnp.arange(T) * strip_h)[:, None, None]   # [T, 1, 1]
+
+    xs = raw[..., 0:1] * wcfg.arena_size          # full width
+    ys = lo_y + raw[..., 1:2] * strip_h           # clamped to type's strip
+
+    hotspot_pos = jnp.concatenate([xs, ys], axis=-1)  # [T, n_food, 2]
+
     return WorldState(
         agent_pos=jax.random.uniform(k1, (2,)) * wcfg.arena_size,
-        agent_energy=jnp.array(wcfg.init_energy, dtype=jnp.float32),
-        hotspot_pos=jax.random.uniform(k2, (wcfg.n_food, 2)) * wcfg.arena_size,
+        agent_energy=jnp.full((wcfg.n_food_types,), wcfg.init_energy, dtype=jnp.float32),
+        hotspot_pos=hotspot_pos,
         step=jnp.array(0, dtype=jnp.int32),
         rng_key=k3,
     )
@@ -154,7 +190,7 @@ def run_episode(
     controller_fn(key, sensors, state, wcfg) -> action [2] in [-1, 1]
 
     Returns (final_state, steps_survived) where steps_survived counts the
-    number of steps on which the agent had energy > 0 after the step.
+    number of steps on which ALL energy types were > 0 after the step.
     Surviving the full episode gives steps_survived == episode_steps.
     """
     k1, k2 = jax.random.split(key)
@@ -166,7 +202,7 @@ def run_episode(
         sensors   = sensor_readout(state, wcfg)
         action    = controller_fn(ctrl_key, sensors, state, wcfg)
         new_state = step_world(state, action, wcfg)
-        alive     = new_state.agent_energy > 0.0
+        alive     = jnp.all(new_state.agent_energy > 0.0)
         return (new_state, k), alive
 
     (final_state, _), alive_mask = jax.lax.scan(

@@ -40,11 +40,11 @@ def record_episode(genome, cfg, wcfg, key):
         input_vec = jnp.zeros(cfg.N_max).at[:cfg.n_in].set(sensors)
         v_new, output, _ = forward_pass(genome, v, input_vec, cfg)
         new_world = step_world(world_state, output, wcfg)
-        alive = new_world.agent_energy > 0.0
+        alive = jnp.all(new_world.agent_energy > 0.0)
         rec = {
             "pos":      world_state.agent_pos,                       # [2]
-            "energy":   world_state.agent_energy,                    # scalar
-            "hotspots": world_state.hotspot_pos,                     # [n_food, 2]
+            "energy":   world_state.agent_energy,                    # [n_food_types]
+            "hotspots": world_state.hotspot_pos,                     # [n_food_types, n_food, 2]
             "activity": jnp.tanh(v_new) * genome.active_mask,       # [N_max]
             "action":   output,                                      # [2]
             "alive":    alive,                                       # bool scalar
@@ -119,12 +119,23 @@ def make_animation(traj, genome, cfg, wcfg, stride: int):
     for sp in ax_arena.spines.values():
         sp.set_edgecolor("#333")
 
-    food_halos  = [plt.Circle((0, 0), SIGMA * 3, color="#00cc55",
-                               alpha=0.12, zorder=2) for _ in range(wcfg.n_food)]
-    food_dots   = [ax_arena.plot([], [], "o", color="#00ff88",
-                                 ms=5, zorder=4, alpha=0.9)[0] for _ in range(wcfg.n_food)]
-    for h in food_halos:
-        ax_arena.add_patch(h)
+    # One color per food type; n_food hotspots per type
+    _type_food_colors = ["#00cc55", "#cc5500", "#0055cc", "#cc0055"]
+    _type_dot_colors  = ["#00ff88", "#ff8800", "#4488ff", "#ff4488"]
+    n_types = wcfg.n_food_types
+    food_halos = [
+        [plt.Circle((0, 0), SIGMA * 3, color=_type_food_colors[ti % len(_type_food_colors)],
+                    alpha=0.12, zorder=2) for _ in range(wcfg.n_food)]
+        for ti in range(n_types)
+    ]
+    food_dots = [
+        [ax_arena.plot([], [], "o", color=_type_dot_colors[ti % len(_type_dot_colors)],
+                       ms=5, zorder=4, alpha=0.9)[0] for _ in range(wcfg.n_food)]
+        for ti in range(n_types)
+    ]
+    for ti in range(n_types):
+        for h in food_halos[ti]:
+            ax_arena.add_patch(h)
 
     trail_line, = ax_arena.plot([], [], "-",  color="#4488ff", alpha=0.35, lw=1.3, zorder=3)
     agent_dot,  = ax_arena.plot([], [], "o",  color="#88bbff", ms=8,      zorder=5,
@@ -157,9 +168,15 @@ def make_animation(traj, genome, cfg, wcfg, stride: int):
     ax_energy.axhline(0.0, color="#444", lw=0.7, ls="--")
     for sp in ax_energy.spines.values():
         sp.set_edgecolor("#333")
-    ax_energy.plot(np.arange(T), traj["energy"], color="#2a2a2a", lw=1.0)  # ghost trace
-    en_line, = ax_energy.plot([], [], color="#00ff88", lw=1.5)
-    en_dot,  = ax_energy.plot([], [], "o", color="#00ff88", ms=4, zorder=5)
+    # Ghost traces and live lines — one per food type
+    _en_colors = ["#00ff88", "#ff8800", "#4488ff", "#ff4488"]
+    for ti in range(n_types):
+        ax_energy.plot(np.arange(T), traj["energy"][:, ti],
+                       color="#2a2a2a", lw=1.0)  # ghost trace
+    en_lines = [ax_energy.plot([], [], color=_en_colors[ti % len(_en_colors)], lw=1.5)[0]
+                for ti in range(n_types)]
+    en_dots  = [ax_energy.plot([], [], "o", color=_en_colors[ti % len(_en_colors)],
+                               ms=4, zorder=5)[0] for ti in range(n_types)]
 
     # ── Neural activity panel ─────────────────────────────────────────────────
     ax_neural.set_facecolor("#0d1117")
@@ -198,30 +215,36 @@ def make_animation(traj, genome, cfg, wcfg, stride: int):
         arrow_quiv.set_offsets(np.array([[px, py]]))
         arrow_quiv.set_UVC(np.array([ax_val[0]]), np.array([ax_val[1]]))
 
-        for i, (halo, dot) in enumerate(zip(food_halos, food_dots)):
-            hx, hy = float(traj["hotspots"][t, i, 0]), float(traj["hotspots"][t, i, 1])
-            halo.center = (hx, hy)
-            dot.set_data([hx], [hy])
+        for ti in range(n_types):
+            for fi, (halo, dot) in enumerate(zip(food_halos[ti], food_dots[ti])):
+                hx = float(traj["hotspots"][t, ti, fi, 0])
+                hy = float(traj["hotspots"][t, ti, fi, 1])
+                halo.center = (hx, hy)
+                dot.set_data([hx], [hy])
 
-        e = float(traj["energy"][t])
+        energies = traj["energy"][t]  # [n_food_types]
+        energy_str = "  ".join(f"E{ti}={float(energies[ti]):.2f}" for ti in range(n_types))
         info_text.set_text(
             f"step  {t:4d} / {T}\n"
-            f"energy  {e:.3f}\n"
+            f"{energy_str}\n"
             f"vx {ax_val[0]:+.2f}  vy {ax_val[1]:+.2f}"
         )
 
         # --- Energy ---
-        en_line.set_data(np.arange(t + 1), traj["energy"][:t+1])
-        en_dot.set_data([t], [e])
+        for ti in range(n_types):
+            en_lines[ti].set_data(np.arange(t + 1), traj["energy"][:t+1, ti])
+            en_dots[ti].set_data([t], [float(energies[ti])])
 
         # --- Neural (rolling buffer: shift up, insert new row at bottom) ---
         hist_buf[:-1] = hist_buf[1:]
         hist_buf[-1]  = traj["activity"][t, active_idxs]
         neural_im.set_data(hist_buf)
 
+        flat_halos = [h for row in food_halos for h in row]
+        flat_dots  = [d for row in food_dots  for d in row]
         return (trail_line, agent_dot, arrow_quiv,
-                *food_halos, *food_dots,
-                info_text, en_line, en_dot, neural_im)
+                *flat_halos, *flat_dots,
+                info_text, *en_lines, *en_dots, neural_im)
 
     ani = manim.FuncAnimation(
         fig, update, frames=len(frames), interval=50, blit=True,

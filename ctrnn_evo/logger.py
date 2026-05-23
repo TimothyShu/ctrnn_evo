@@ -125,10 +125,14 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
         return {k: tuple(v) if isinstance(v, list) else v for k, v in d.items()}
 
     def _migrate(d: dict) -> dict:
+        d = dict(d)
         # lambda_conn was split into lambda_edge + lambda_dist; treat old value as lambda_dist
         if "lambda_conn" in d and "lambda_dist" not in d:
-            d = dict(d)
             d["lambda_dist"] = d.pop("lambda_conn")
+        # n_in is now derived from n_food_types via __post_init__; remove to avoid conflict
+        d.pop("n_in", None)
+        # default n_food_types for runs predating multi-food-type support
+        d.setdefault("n_food_types", 1)
         return d
 
     with open(Path(run_dir) / "config.json") as f:

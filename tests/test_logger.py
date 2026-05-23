@@ -46,7 +46,7 @@ def tmp_base(tmp_path):
 
 @pytest.fixture(scope="module")
 def cfg():
-    return Config(N_max=16, n_in=2, n_out=2, K=4, population_size=10, tournament_size=3)
+    return Config(N_max=16, n_out=2, K=4, population_size=10, tournament_size=3)
 
 
 @pytest.fixture(scope="module")

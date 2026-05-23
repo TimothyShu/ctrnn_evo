@@ -49,7 +49,7 @@ from ctrnn_evo.mutation import (
 @pytest.fixture
 def cfg():
     # Small network so tests run fast; large enough for structural ops to have room
-    return Config(N_max=16, n_in=2, n_out=2)
+    return Config(N_max=16, n_out=2)
 
 
 @pytest.fixture

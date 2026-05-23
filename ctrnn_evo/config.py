@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Tuple
 
 
@@ -6,8 +6,10 @@ from typing import Tuple
 class Config:
     # Network capacity
     N_max: int = 64
-    n_in:  int = 2
     n_out: int = 2
+
+    # Food types — n_in is derived automatically as 2 * n_food_types
+    n_food_types: int = 1
 
     # Integration
     dt:       float = 0.5   # neural timestep (ms); must satisfy dt <= tau_min
@@ -30,6 +32,12 @@ class Config:
     # Evolution
     population_size:  int = 1000
     tournament_size:  int = 4
+
+    # Derived — set by __post_init__, not a constructor argument
+    n_in: int = field(init=False)
+
+    def __post_init__(self):
+        self.n_in = 2 * self.n_food_types
 
     def tau_range(self, neuron_type: int) -> Tuple[float, float]:
         return (self.tau_e_range, self.tau_fsi_range, self.tau_sii_range)[neuron_type]

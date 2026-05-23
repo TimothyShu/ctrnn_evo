@@ -1,3 +1,4 @@
+import dataclasses
 import jax
 import jax.numpy as jnp
 import pytest
@@ -6,7 +7,7 @@ from ctrnn_evo import Config, random_genome, edge_count_cost, dist_cost, adjuste
 
 @pytest.fixture
 def cfg():
-    return Config(N_max=8, n_in=1, n_out=1)
+    return Config(N_max=8, n_out=1)
 
 
 def test_edge_count_cost_zero_no_edges(cfg):
@@ -57,8 +58,8 @@ def test_adjusted_fitness_lambda_dist(cfg):
     g     = random_genome(key, cfg)
     f_raw = 1.0
     c_act = 0.0
-    cfg_no   = Config(**{**vars(cfg), "lambda_dist": 0.0})
-    cfg_with = Config(**{**vars(cfg), "lambda_dist": 1.0})
+    cfg_no   = dataclasses.replace(cfg, lambda_dist=0.0)
+    cfg_with = dataclasses.replace(cfg, lambda_dist=1.0)
     assert float(adjusted_fitness(f_raw, g, c_act, cfg_no))   == pytest.approx(f_raw)
     assert float(adjusted_fitness(f_raw, g, c_act, cfg_with)) <  f_raw
 
@@ -69,8 +70,8 @@ def test_adjusted_fitness_lambda_edge(cfg):
     g     = random_genome(key, cfg)
     f_raw = 1.0
     c_act = 0.0
-    cfg_no   = Config(**{**vars(cfg), "lambda_edge": 0.0})
-    cfg_with = Config(**{**vars(cfg), "lambda_edge": 1.0})
+    cfg_no   = dataclasses.replace(cfg, lambda_edge=0.0)
+    cfg_with = dataclasses.replace(cfg, lambda_edge=1.0)
     assert float(adjusted_fitness(f_raw, g, c_act, cfg_no))   == pytest.approx(f_raw)
     assert float(adjusted_fitness(f_raw, g, c_act, cfg_with)) <  f_raw
 
@@ -81,7 +82,7 @@ def test_activation_cost_penalty(cfg):
     g     = random_genome(key, cfg)
     f_raw = 1.0
     c_act = 5.0
-    cfg_no   = Config(**{**vars(cfg), "lambda_act": 0.0})
-    cfg_with = Config(**{**vars(cfg), "lambda_act": 0.1})
+    cfg_no   = dataclasses.replace(cfg, lambda_act=0.0)
+    cfg_with = dataclasses.replace(cfg, lambda_act=0.1)
     assert float(adjusted_fitness(f_raw, g, c_act, cfg_no))   == pytest.approx(f_raw)
     assert float(adjusted_fitness(f_raw, g, c_act, cfg_with)) <  f_raw

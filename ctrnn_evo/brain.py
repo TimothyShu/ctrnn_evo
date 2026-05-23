@@ -68,7 +68,7 @@ def _brain_world_step(
 
     # Advance world
     new_world = step_world(world_state, action, wcfg)
-    alive = new_world.agent_energy > 0.0
+    alive = jnp.all(new_world.agent_energy > 0.0)
 
     return (new_world, v_new), (alive, _c_act)
 

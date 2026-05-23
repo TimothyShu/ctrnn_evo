@@ -32,7 +32,7 @@ from ctrnn_evo.brain import run_brain_episode, batch_run_brain_episode, make_ctr
 
 @pytest.fixture(scope="module")
 def cfg():
-    return Config(N_max=16, n_in=2, n_out=2, K=4)
+    return Config(N_max=16, n_out=2, K=4)
 
 
 @pytest.fixture(scope="module")
@@ -68,8 +68,8 @@ def test_final_state_shapes(genome, cfg, wcfg):
     key = jax.random.PRNGKey(2)
     final_state, _ = run_brain_episode(key, genome, cfg, wcfg)
     assert final_state.agent_pos.shape == (2,)
-    assert final_state.hotspot_pos.shape == (wcfg.n_food, 2)
-    assert final_state.agent_energy.shape == ()
+    assert final_state.hotspot_pos.shape == (wcfg.n_food_types, wcfg.n_food, 2)
+    assert final_state.agent_energy.shape == (wcfg.n_food_types,)
 
 
 # ── 2. steps_survived is bounded ──────────────────────────────────────────────
@@ -139,7 +139,7 @@ def test_batch_run_brain_episode_shapes(pop_genomes, cfg, wcfg):
     final_states, steps = batch_run_brain_episode(keys, pop_genomes, cfg, wcfg)
     assert steps.shape == (8,), f"Expected (8,) steps, got {steps.shape}"
     assert final_states.agent_pos.shape == (8, 2)
-    assert final_states.agent_energy.shape == (8,)
+    assert final_states.agent_energy.shape == (8, wcfg.n_food_types)
 
 
 def test_batch_run_bounded(pop_genomes, cfg, wcfg):

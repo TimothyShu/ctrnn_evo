@@ -47,7 +47,7 @@ GENS = 10   # short run for run_evolution test
 
 @pytest.fixture(scope="module")
 def cfg():
-    return Config(N_max=16, n_in=2, n_out=2, K=4, population_size=POP, tournament_size=3)
+    return Config(N_max=16, n_out=2, K=4, population_size=POP, tournament_size=3)
 
 @pytest.fixture(scope="module")
 def wcfg():
@@ -121,7 +121,7 @@ def test_compute_fitness_shape(evaluated):
 
 def test_compute_fitness_in_unit_interval_when_no_penalty(pop, cfg, wcfg):
     """With lambda_conn=lambda_act=0 (Config defaults), fitness == f_raw ∈ [0,1]."""
-    assert cfg.lambda_conn == 0.0 and cfg.lambda_act == 0.0, "Test assumes zero-penalty config"
+    assert cfg.lambda_edge == 0.0 and cfg.lambda_dist == 0.0 and cfg.lambda_act == 0.0, "Test assumes zero-penalty config"
     key = jax.random.PRNGKey(8)
     steps, c_acts = eval_population(key, pop, cfg, wcfg, n_evals=2)
     fitness = compute_fitness(steps, c_acts, pop, cfg, wcfg)
@@ -129,10 +129,10 @@ def test_compute_fitness_in_unit_interval_when_no_penalty(pop, cfg, wcfg):
 
 def test_compute_fitness_penalty_reduces_fitness():
     """Enabling connection cost should strictly reduce fitness for a genome with edges."""
-    cfg_no  = Config(N_max=16, n_in=2, n_out=2, K=4, population_size=4,
-                     lambda_conn=0.0, lambda_act=0.0)
-    cfg_pen = Config(N_max=16, n_in=2, n_out=2, K=4, population_size=4,
-                     lambda_conn=1.0, lambda_act=0.0)
+    cfg_no  = Config(N_max=16, n_out=2, K=4, population_size=4,
+                     lambda_edge=0.0, lambda_dist=0.0, lambda_act=0.0)
+    cfg_pen = Config(N_max=16, n_out=2, K=4, population_size=4,
+                     lambda_edge=1.0, lambda_dist=0.0, lambda_act=0.0)
     wcfg = WorldConfig(episode_steps=50)
     key  = jax.random.PRNGKey(9)
     pop_small = init_population(key, cfg_no)
@@ -282,7 +282,7 @@ def test_run_evolution_history_keys(cfg, wcfg, rates):
     key = jax.random.PRNGKey(31)
     _, _, history = run_evolution(key, 2, cfg, wcfg, rates, n_evals=2)
     expected = {"generation", "max_fitness", "mean_fitness", "max_steps",
-                "mean_steps", "mean_n_active", "mean_conn_cost"}
+                "mean_steps", "mean_n_active", "mean_edge_cost", "mean_wiring_cost"}
     assert expected <= set(history[0].keys()), f"Missing keys: {expected - set(history[0].keys())}"
 
 def test_run_evolution_generation_indices(cfg, wcfg, rates):
@@ -335,5 +335,6 @@ def test_collect_stats_values_plausible(pop, evaluated, cfg):
     assert stats["mean_n_active"] >= cfg.n_in + cfg.n_out, \
         "mean_n_active must be at least n_in + n_out (I/O slots always active)"
     assert stats["mean_n_active"] <= cfg.N_max
-    assert stats["mean_conn_cost"] >= 0.0
+    assert stats["mean_edge_cost"] >= 0.0
+    assert stats["mean_wiring_cost"] >= 0.0
     assert 0.0 <= stats["mean_fitness"] <= stats["max_fitness"] + 1e-6

@@ -35,7 +35,7 @@ def minimal_genome(cfg: Config, **overrides) -> Genome:
 
 @pytest.fixture
 def cfg():
-    return Config(N_max=8, n_in=1, n_out=1, dt=0.5, K=20)
+    return Config(N_max=8, n_out=1, dt=0.5, K=20)
 
 
 def test_isolated_excitatory_neuron_decays(cfg):

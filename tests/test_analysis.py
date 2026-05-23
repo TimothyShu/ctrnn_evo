@@ -36,7 +36,7 @@ from ctrnn_evo.analysis import (
 
 @pytest.fixture(scope="module")
 def cfg():
-    return Config(N_max=16, n_in=2, n_out=2, K=4, population_size=8, tournament_size=3)
+    return Config(N_max=16, n_out=2, K=4, population_size=8, tournament_size=3)
 
 
 @pytest.fixture(scope="module")
