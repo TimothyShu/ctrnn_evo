@@ -1,0 +1,7 @@
+config: configs/base_m8.yaml
+overrides:
+  n-replicates: 2
+  n-generations: 5
+  n-food-types: 2
+  output-dir: runs/smoke_test_multifood
+notes: "smoke test for multi-food-type world — 2 reps x 5 gens, validates n_food_types=2 end-to-end"
