@@ -1,0 +1,6 @@
+config: configs/multifood_m8.yaml
+
+overrides:
+  output-dir: runs/multifood/baseline
+
+notes: "multi-food baseline — n_food_types=2, no cost terms, establish Q and fitness vs single-food"
