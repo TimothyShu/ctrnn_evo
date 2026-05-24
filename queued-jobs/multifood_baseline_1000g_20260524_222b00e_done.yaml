@@ -1,0 +1,7 @@
+config: configs/multifood_m8.yaml
+
+overrides:
+  n-generations: 1000
+  output-dir: runs/multifood/baseline_1000g
+
+notes: "multifood baseline 1000 gens — checking convergence, no cost terms, modular only, ~13h"
