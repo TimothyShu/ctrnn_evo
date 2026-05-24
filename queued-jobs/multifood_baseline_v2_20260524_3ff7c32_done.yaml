@@ -1,0 +1,7 @@
+config: configs/multifood_m8.yaml
+
+overrides:
+  n-generations: 1000
+  output-dir: runs/multifood/baseline_v2
+
+notes: "multifood baseline v2 — metabolism=0.005, hotspot-sigma=3.0, 10 reps x 1000 gens, establish new baseline Q and fitness"
