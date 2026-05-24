@@ -70,7 +70,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lambda-dist",   type=float, default=0.001,  help="distance-weighted wiring cost coefficient (penalises long edges more)")
     p.add_argument("--lambda-act",    type=float, default=0.0,    help="activation cost coefficient (penalises mean firing per tick)")
     p.add_argument("--n-food-types",  type=int,   default=1,      help="number of distinct food types (each with its own energy resource and sensor channel)")
-    p.add_argument("--hotspot-drift", type=float, default=0.6,    help="std-dev of per-step hotspot Gaussian drift (default 0.6; use ~0.2 with strip placement to keep types separated)")
+    p.add_argument("--hotspot-drift",  type=float, default=0.6,   help="std-dev of per-step hotspot Gaussian drift (default 0.6; use ~0.2 with strip placement to keep types separated)")
+    p.add_argument("--hotspot-sigma",  type=float, default=5.0,   help="Gaussian radius of food reward patch (default 5.0; smaller = harder to find food)")
+    p.add_argument("--metabolism",     type=float, default=0.01,  help="energy drain per step from baseline metabolism (default 0.01)")
     p.add_argument("--output-dir",    type=str,   default="runs/m8", help="root directory for all run output")
     p.add_argument("--seed",          type=int,   default=0,      help="base random seed")
     p.add_argument("--fitness-threshold",  type=float, default=None,
@@ -277,7 +279,8 @@ def main() -> None:
 
     # ── Configs ───────────────────────────────────────────────────────────────
     base_cfg = Config(population_size=args.pop_size, n_food_types=args.n_food_types)
-    wcfg     = WorldConfig(n_food_types=args.n_food_types, hotspot_drift=args.hotspot_drift)
+    wcfg     = WorldConfig(n_food_types=args.n_food_types, hotspot_drift=args.hotspot_drift,
+                           hotspot_sigma=args.hotspot_sigma, metabolism=args.metabolism)
     rates    = MutationRates()
 
     cfg_baseline = Config(

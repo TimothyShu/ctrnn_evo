@@ -400,6 +400,52 @@ class TestEnergyEconomics:
         expected = 0.5 - wcfg.metabolism
         assert float(s2.agent_energy[0]) == pytest.approx(expected, abs=1e-4)
 
+    def test_lower_metabolism_extends_starvation_budget(self):
+        """
+        Halving metabolism should roughly double the starvation budget.
+        With metabolism=0.005, a stationary agent at init_energy=0.5 with
+        no food nearby should survive at least 80 steps (vs ~38 at 0.01).
+        """
+        wcfg = WorldConfig(metabolism=0.005)
+        state = reset_world(jax.random.PRNGKey(0), wcfg)
+        barren = WorldState(
+            agent_pos=jnp.array([50.0, 50.0]),
+            agent_energy=jnp.full((wcfg.n_food_types,), 0.5),
+            hotspot_pos=jnp.full((wcfg.n_food_types, wcfg.n_food, 2), wcfg.arena_size * 10),
+            step=state.step,
+            rng_key=state.rng_key,
+        )
+        steps = 0
+        for _ in range(120):
+            state = step_world(barren, jnp.zeros(2), wcfg)
+            barren = state
+            if float(state.agent_energy[0]) <= 0.0:
+                break
+            steps += 1
+        assert steps >= 80, (
+            f"With metabolism=0.005 agent should survive ≥80 steps, got {steps}"
+        )
+
+    def test_smaller_hotspot_sigma_reduces_coverage(self):
+        """
+        A smaller sigma should give significantly less food reward at the
+        same distance from the hotspot centre.
+        At distance = 2*sigma the reward should drop by a factor of e^2 ≈ 7.4x.
+        """
+        dist = 6.0  # fixed distance from hotspot
+        wcfg_large = WorldConfig(hotspot_sigma=5.0)
+        wcfg_small = WorldConfig(hotspot_sigma=3.0)
+        hotspot = jnp.array([[50.0, 50.0], [50.0, 50.0], [50.0, 50.0]])
+        pos_near = jnp.array([50.0 + dist, 50.0])
+        f_large = float(food_at(pos_near, hotspot, wcfg_large))
+        f_small = float(food_at(pos_near, hotspot, wcfg_small))
+        assert f_large > f_small, "Larger sigma should give more reward at same distance"
+        ratio = f_large / (f_small + 1e-9)
+        assert ratio > 3.0, (
+            f"Smaller sigma should substantially reduce reward at distance={dist}: "
+            f"ratio={ratio:.2f} (expected >3x)"
+        )
+
 
 # ── Controllers ───────────────────────────────────────────────────────────────
 
