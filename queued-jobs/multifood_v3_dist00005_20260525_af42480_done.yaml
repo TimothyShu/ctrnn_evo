@@ -1,0 +1,10 @@
+config: configs/multifood_m8.yaml
+
+overrides:
+  hotspot-sigma: 4.0
+  lambda-dist: 0.00005
+  n-generations: 1000
+  condition: modular
+  output-dir: runs/multifood/v3_dist00005
+
+notes: "multifood v3 + dist cost — sigma=4.0, metabolism=0.005, lambda-dist=5e-5, 10 reps x 1000 gens. Combines best-performing world config (v3) with distance cost that produced 1.87x more efficient networks. Baseline already in runs/multifood/baseline_v3."
