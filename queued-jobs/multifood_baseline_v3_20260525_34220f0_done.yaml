@@ -1,0 +1,8 @@
+config: configs/multifood_m8.yaml
+
+overrides:
+  n-generations: 1000
+  hotspot-sigma: 4.0
+  output-dir: runs/multifood/baseline_v3
+
+notes: "multifood baseline v3 — metabolism=0.005, hotspot-sigma=4.0 (compromise between 3.0 too-hard and 5.0 too-easy), 10 reps x 1000 gens"
