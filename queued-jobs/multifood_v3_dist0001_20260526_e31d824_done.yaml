@@ -1,0 +1,10 @@
+config: configs/multifood_m8.yaml
+
+overrides:
+  hotspot-sigma: 4.0
+  lambda-dist: 0.0001
+  n-generations: 1000
+  condition: modular
+  output-dir: runs/multifood/v3_dist0001
+
+notes: "multifood v3 + dist0001 — sigma=4.0, metabolism=0.005, lambda-dist=1e-4 (2x stronger than v3_dist00005). Completes cost sweep on v3 world. Key question: does stronger pressure recover the SII-floor-departure seen on sigma=3, and does pruning become as aggressive as dist00005/MOD (18 neurons)?"
