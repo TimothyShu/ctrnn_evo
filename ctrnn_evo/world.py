@@ -31,6 +31,11 @@ class WorldConfig:
     # Episode
     episode_steps: int   = 2000
 
+    # Sensors — whether to append normalised (x, y) position to the sensor vector.
+    # Must match Config.position_sensors so that n_in is consistent.
+    # Default False for backward compatibility with all existing runs.
+    position_sensors: bool = False
+
 
 # ── WorldState ────────────────────────────────────────────────────────────────
 
@@ -83,17 +88,34 @@ def food_at(
 
 def sensor_readout(state: WorldState, wcfg: WorldConfig) -> jnp.ndarray:
     """
-    Returns [food_0, ..., food_{T-1}, energy_0, ..., energy_{T-1}] (length 2*n_food_types),
-    all normalised to [0, 1].
+    Returns the sensor vector fed to the CTRNN input neurons.
 
-    With n_food_types=1 this is [food_density, energy_level] — identical to the
-    original two-sensor interface.
+    Base (always present):
+        [food_0, ..., food_{T-1}, energy_0, ..., energy_{T-1}]
+        length = 2 * n_food_types, all normalised to [0, 1].
+
+    With wcfg.position_sensors=True, two additional values are appended:
+        [..., x / arena_size, y / arena_size]
+        length = 2 * n_food_types + 2
+
+    With n_food_types=1 and position_sensors=False this is [food_density, energy_level],
+    identical to the original two-sensor interface.
+
+    Position sensors give the agent proprioceptive awareness of its location,
+    which is essential when it starts far from any hotspot and the food signal
+    is zero — without them it has no gradient to follow and runs open-loop.
     """
     food_norms = jax.vmap(
         lambda hpos: jnp.clip(food_at(state.agent_pos, hpos, wcfg), 0.0, 1.0)
-    )(state.hotspot_pos)                                   # [n_food_types]
-    energy_norms = state.agent_energy / wcfg.max_energy   # [n_food_types]
-    return jnp.concatenate([food_norms, energy_norms])    # [2 * n_food_types]
+    )(state.hotspot_pos)                                    # [n_food_types]
+    energy_norms = state.agent_energy / wcfg.max_energy    # [n_food_types]
+    sensors = jnp.concatenate([food_norms, energy_norms])  # [2 * n_food_types]
+
+    if wcfg.position_sensors:
+        pos_norm = state.agent_pos / wcfg.arena_size        # [2] in [0, 1]
+        sensors  = jnp.concatenate([sensors, pos_norm])
+
+    return sensors
 
 
 # ── World step ────────────────────────────────────────────────────────────────

@@ -100,6 +100,10 @@ def parse_args() -> argparse.Namespace:
                    help="fitness metric: 'survival'=steps_survived/T ∈ [0,1] (default); "
                         "'food'=cumulative raw food score / (T * n_food_types), can exceed 1.0 "
                         "for agents that actively forage near hotspot centres")
+    p.add_argument("--position-sensors", action="store_true", default=False,
+                   help="give the agent normalised (x, y) position as two extra input sensors "
+                        "(appended after food/energy sensors). Adds 2 to n_in. Without this, "
+                        "agents starting far from food have zero gradient and run open-loop.")
     p.add_argument("--verbose",        action="store_true",       help="print per-generation progress")
     p.add_argument("--smoke-test",     action="store_true",       help="quick run: 2 replicates × 5 generations × 1 eval")
     p.add_argument("--quick-test",     action="store_true",       help="lambda sweep validation: 3 replicates × 150 generations × pop=500")
@@ -284,15 +288,17 @@ def main() -> None:
 
     # ── Configs ───────────────────────────────────────────────────────────────
     base_cfg = Config(population_size=args.pop_size, n_food_types=args.n_food_types,
-                      fitness_mode=args.fitness_mode)
+                      fitness_mode=args.fitness_mode, position_sensors=args.position_sensors)
     wcfg     = WorldConfig(n_food_types=args.n_food_types, hotspot_drift=args.hotspot_drift,
-                           hotspot_sigma=args.hotspot_sigma, metabolism=args.metabolism)
+                           hotspot_sigma=args.hotspot_sigma, metabolism=args.metabolism,
+                           position_sensors=args.position_sensors)
     rates    = MutationRates()
 
     cfg_baseline = Config(
         population_size=args.pop_size,
         n_food_types=args.n_food_types,
         fitness_mode=args.fitness_mode,
+        position_sensors=args.position_sensors,
     )
     cfg_modular = Config(
         population_size=args.pop_size,
@@ -301,6 +307,7 @@ def main() -> None:
         lambda_dist=args.lambda_dist,
         lambda_act=args.lambda_act,
         fitness_mode=args.fitness_mode,
+        position_sensors=args.position_sensors,
     )
 
     # ── Key schedule ──────────────────────────────────────────────────────────
@@ -319,6 +326,7 @@ def main() -> None:
     print(f"  population_size = {args.pop_size}")
     print(f"  n_evals         = {args.n_evals}")
     print(f"  fitness_mode    = {args.fitness_mode}")
+    print(f"  position_sensors= {args.position_sensors}")
     print(f"  lambda_edge     = 0.0  (baseline)  vs  {args.lambda_edge}  (modular)")
     print(f"  lambda_dist     = 0.0  (baseline)  vs  {args.lambda_dist}  (modular)")
     print(f"  lambda_act      = 0.0  (baseline)  vs  {args.lambda_act}  (modular)")
@@ -381,6 +389,7 @@ def main() -> None:
                 lambda_dist=lam,
                 lambda_act=args.lambda_act,
                 fitness_mode=args.fitness_mode,
+                position_sensors=args.position_sensors,
             )
             # Derive a deterministic key stream for this lambda from the base seed
             lam_key = jax.random.fold_in(jax.random.PRNGKey(args.seed), int(lam * 1_000_000))

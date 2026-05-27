@@ -39,11 +39,18 @@ class Config:
     #             → can exceed 1.0 for agents that actively forage near hotspots
     fitness_mode: str = "survival"
 
+    # Position sensors — if True, normalised (x, y) in [0, 1] are appended to the
+    # sensor vector, giving the agent proprioceptive awareness of its arena location.
+    # Without these, agents starting far from any food hotspot receive a zero food
+    # signal and have no gradient to follow — they run open-loop into walls.
+    # Adds 2 to n_in.  Default False for backward compatibility.
+    position_sensors: bool = False
+
     # Derived — set by __post_init__, not a constructor argument
     n_in: int = field(init=False)
 
     def __post_init__(self):
-        self.n_in = 2 * self.n_food_types
+        self.n_in = 2 * self.n_food_types + (2 if self.position_sensors else 0)
 
     def tau_range(self, neuron_type: int) -> Tuple[float, float]:
         return (self.tau_e_range, self.tau_fsi_range, self.tau_sii_range)[neuron_type]

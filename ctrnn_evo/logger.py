@@ -135,12 +135,20 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
         d.setdefault("n_food_types", 1)
         # default fitness_mode for runs predating food-score fitness support
         d.setdefault("fitness_mode", "survival")
+        # default position_sensors for runs predating proprioceptive sensor support
+        d.setdefault("position_sensors", False)
+        return d
+
+    def _migrate_wcfg(d: dict) -> dict:
+        d = dict(d)
+        # default position_sensors for world configs predating proprioceptive sensors
+        d.setdefault("position_sensors", False)
         return d
 
     with open(Path(run_dir) / "config.json") as f:
         data = json.load(f)
     cfg   = Config(**_fix_tuples(_migrate(data["config"])))
-    wcfg  = WorldConfig(**data["world_config"])
+    wcfg  = WorldConfig(**_migrate_wcfg(data["world_config"]))
     rates = MutationRates(**data["mutation_rates"])
     return cfg, wcfg, rates
 
