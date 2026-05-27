@@ -1,0 +1,31 @@
+config: configs/base_m8.yaml
+
+overrides:
+  # Fitness
+  fitness-mode: food            # cumulative raw food score — can exceed 1.0
+
+  # Sensors
+  position-sensors: true        # gives agent normalised (x,y) — fixes blind-search
+                                #   into walls when starting far from food hotspots
+
+  # World
+  hotspot-sigma: 4.0            # tight patches reward precision foraging
+  metabolism: 0.005             # 2x starvation budget; smoother food-score signal
+
+  # Regularisation — combo1 lambdas scaled 10x down to match food-score signal magnitude.
+  # v1 collapsed (fitness=0.065, nodes=5) because lambda*C_dist > food_score at gen=0.
+  # At gen=0: penalty=0.0046 vs food=0.0091 -> adj=+0.0045 (positive, won't collapse).
+  lambda-dist: 0.00005
+  lambda-act:  0.0001
+
+  # Evolution
+  n-replicates: 5               # 5/condition x 2 conditions = 10 total
+  n-generations: 1000
+  n-evals: 10                   # 2x baseline; food-score CV << survival CV
+  condition: both
+
+  output-dir: runs/singlefood/food_score_v2
+
+notes: "Food-score + position sensors. Fixes: (1) position-sensors=True eliminates
+        blind wall-running; (2) lambdas 10x smaller prevents modular collapse seen
+        in v1 (penalty 5x food signal). ~12 hrs."
