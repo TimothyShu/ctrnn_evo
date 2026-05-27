@@ -1,0 +1,26 @@
+config: configs/base_m8.yaml
+
+overrides:
+  # Fitness
+  fitness-mode: food            # cumulative raw food score — can exceed 1.0
+
+  # World
+  hotspot-sigma: 4.0            # tighter than default 5.0; rewards precision foraging
+                                #   ~8% arena viable with 3 hotspots (good gradient signal)
+  metabolism: 0.005             # 2× starvation budget; smoother food-score accumulation
+
+  # Regularisation — best from single-food combo sweep (combo1_dist0005_act0010):
+  #   highest mean fitness (0.713), fewest nodes (22.1), still climbing at gen 499
+  lambda-dist: 0.0005
+  lambda-act:  0.001
+
+  # Evolution
+  n-replicates: 5               # 5/condition × 2 conditions = 10 total
+  n-generations: 1000
+  n-evals: 10                   # 2× baseline; food-score CV << survival CV
+  condition: both
+
+  output-dir: runs/singlefood/food_score_v1
+
+notes: "Food-score fitness, single food, sigma=4. Reg from best single-food run
+        (combo1: lambda_dist=5e-4 + lambda_act=1e-3). n_evals=10. ~12 hrs."
