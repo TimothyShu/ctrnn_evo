@@ -66,8 +66,8 @@ def pop(cfg):
 def evaluated(pop, cfg, wcfg):
     """Pre-evaluated population: (steps, c_acts, fitness)."""
     key = jax.random.PRNGKey(1)
-    steps, c_acts = eval_population(key, pop, cfg, wcfg, n_evals=3)
-    fitness = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+    steps, c_acts, raw_food = eval_population(key, pop, cfg, wcfg, n_evals=3)
+    fitness = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg)
     return steps, c_acts, fitness
 
 
@@ -108,9 +108,9 @@ def test_eval_population_c_acts_nonneg(evaluated):
 
 def test_eval_population_determinism(pop, cfg, wcfg):
     key = jax.random.PRNGKey(7)
-    s1, c1 = eval_population(key, pop, cfg, wcfg, n_evals=2)
-    s2, c2 = eval_population(key, pop, cfg, wcfg, n_evals=2)
-    assert jnp.array_equal(s1, s2) and jnp.allclose(c1, c2)
+    s1, c1, rf1 = eval_population(key, pop, cfg, wcfg, n_evals=2)
+    s2, c2, rf2 = eval_population(key, pop, cfg, wcfg, n_evals=2)
+    assert jnp.array_equal(s1, s2) and jnp.allclose(c1, c2) and jnp.allclose(rf1, rf2)
 
 
 # ── 3. compute_fitness ────────────────────────────────────────────────────────
@@ -120,11 +120,12 @@ def test_compute_fitness_shape(evaluated):
     assert fitness.shape == (POP,)
 
 def test_compute_fitness_in_unit_interval_when_no_penalty(pop, cfg, wcfg):
-    """With lambda_conn=lambda_act=0 (Config defaults), fitness == f_raw ∈ [0,1]."""
+    """With lambda_conn=lambda_act=0 (Config defaults), survival fitness == f_raw ∈ [0,1]."""
     assert cfg.lambda_edge == 0.0 and cfg.lambda_dist == 0.0 and cfg.lambda_act == 0.0, "Test assumes zero-penalty config"
+    assert cfg.fitness_mode == "survival", "Test assumes survival fitness mode"
     key = jax.random.PRNGKey(8)
-    steps, c_acts = eval_population(key, pop, cfg, wcfg, n_evals=2)
-    fitness = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+    steps, c_acts, raw_food = eval_population(key, pop, cfg, wcfg, n_evals=2)
+    fitness = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg)
     assert jnp.all(fitness >= 0.0) and jnp.all(fitness <= 1.0 + 1e-5)
 
 def test_compute_fitness_penalty_reduces_fitness():
@@ -136,10 +137,10 @@ def test_compute_fitness_penalty_reduces_fitness():
     wcfg = WorldConfig(episode_steps=50)
     key  = jax.random.PRNGKey(9)
     pop_small = init_population(key, cfg_no)
-    steps, c_acts = eval_population(key, pop_small, cfg_no, wcfg, n_evals=2)
+    steps, c_acts, raw_food = eval_population(key, pop_small, cfg_no, wcfg, n_evals=2)
 
-    f_no  = compute_fitness(steps, c_acts, pop_small, cfg_no,  wcfg)
-    f_pen = compute_fitness(steps, c_acts, pop_small, cfg_pen, wcfg)
+    f_no  = compute_fitness(steps, c_acts, raw_food, pop_small, cfg_no,  wcfg)
+    f_pen = compute_fitness(steps, c_acts, raw_food, pop_small, cfg_pen, wcfg)
     # With positive connection cost, penalised fitness ≤ unpenalised fitness
     assert jnp.all(f_pen <= f_no + 1e-6)
 
@@ -249,26 +250,28 @@ def test_elitism_best_parent_in_slot_zero(pop, evaluated, cfg, rates):
 
 # ── 9. run_brain_episode_full ─────────────────────────────────────────────────
 
-def test_run_brain_episode_full_three_returns(cfg, wcfg):
+def test_run_brain_episode_full_four_returns(cfg, wcfg):
     key    = jax.random.PRNGKey(20)
     genome = random_genome(key, cfg)
     result = run_brain_episode_full(key, genome, cfg, wcfg)
-    assert len(result) == 3, "Expected (final_state, steps_survived, mean_c_act)"
+    assert len(result) == 4, "Expected (final_state, steps_survived, mean_c_act, total_raw_food)"
 
 def test_run_brain_episode_full_c_act_nonneg(cfg, wcfg):
     key    = jax.random.PRNGKey(21)
     genome = random_genome(key, cfg)
-    _, steps, c_act = run_brain_episode_full(key, genome, cfg, wcfg)
+    _, steps, c_act, raw_food = run_brain_episode_full(key, genome, cfg, wcfg)
     assert float(c_act) >= 0.0
+    assert float(raw_food) >= 0.0
     assert 0 <= int(steps) <= wcfg.episode_steps
 
 def test_run_brain_episode_full_determinism(cfg, wcfg):
     key    = jax.random.PRNGKey(22)
     genome = random_genome(key, cfg)
-    _, s1, c1 = run_brain_episode_full(key, genome, cfg, wcfg)
-    _, s2, c2 = run_brain_episode_full(key, genome, cfg, wcfg)
+    _, s1, c1, rf1 = run_brain_episode_full(key, genome, cfg, wcfg)
+    _, s2, c2, rf2 = run_brain_episode_full(key, genome, cfg, wcfg)
     assert int(s1) == int(s2)
     assert jnp.isclose(c1, c2)
+    assert jnp.isclose(rf1, rf2)
 
 
 # ── 10. run_evolution ─────────────────────────────────────────────────────────

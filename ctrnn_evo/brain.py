@@ -12,8 +12,9 @@ run_brain_episode(key, genome, cfg, wcfg) -> (final_state, steps_survived)
     Runs a full episode with the CTRNN brain driving the agent.
     JIT-compilable and vmap-safe.
 
-run_brain_episode_full(key, genome, cfg, wcfg) -> (final_state, steps_survived, mean_c_act)
-    Same as run_brain_episode but also returns mean activation cost across all steps.
+run_brain_episode_full(key, genome, cfg, wcfg) -> (final_state, steps_survived, mean_c_act, total_raw_food)
+    Same as run_brain_episode but also returns mean activation cost and cumulative
+    raw food score (uncapped, summed over all alive steps and food types).
     Used by the evolutionary evaluator.
 
 batch_run_brain_episode(keys, genomes, cfg, wcfg) -> (final_states, steps)
@@ -28,7 +29,7 @@ import jax.numpy as jnp
 from .config import Config
 from .genome import Genome
 from .forward import forward_pass
-from .world import WorldConfig, WorldState, sensor_readout, step_world, reset_world
+from .world import WorldConfig, WorldState, food_at, sensor_readout, step_world, reset_world
 
 
 # ── Internal scan body ────────────────────────────────────────────────────────
@@ -70,7 +71,17 @@ def _brain_world_step(
     new_world = step_world(world_state, action, wcfg)
     alive = jnp.all(new_world.agent_energy > 0.0)
 
-    return (new_world, v_new), (alive, _c_act)
+    # Raw food score: sum of uncapped food_at across all food types.
+    # Only credited while alive — dead agents stop accumulating score.
+    # This is read-only and does NOT affect world energy or the world model.
+    raw_food = (
+        jnp.sum(jax.vmap(
+            lambda hpos: food_at(new_world.agent_pos, hpos, wcfg)
+        )(new_world.hotspot_pos))
+        * alive.astype(jnp.float32)
+    )
+
+    return (new_world, v_new), (alive, _c_act, raw_food)
 
 
 # ── Public: single-genome episode ────────────────────────────────────────────
@@ -103,7 +114,7 @@ def run_brain_episode(
     step_keys = jax.random.split(k_steps, wcfg.episode_steps)
 
     def body(carry, rng_key):
-        new_carry, (alive, _c_act) = _brain_world_step(carry, rng_key, genome, cfg, wcfg)
+        new_carry, (alive, _c_act, _raw_food) = _brain_world_step(carry, rng_key, genome, cfg, wcfg)
         return new_carry, alive
 
     (final_world, _v_final), alive_mask = jax.lax.scan(
@@ -121,15 +132,22 @@ def run_brain_episode_full(
     genome: Genome,
     cfg: Config,
     wcfg: WorldConfig,
-) -> tuple[WorldState, jnp.ndarray, jnp.ndarray]:
+) -> tuple[WorldState, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
-    Same as run_brain_episode but also accumulates mean activation cost.
+    Same as run_brain_episode but also accumulates mean activation cost and
+    total raw food score.
 
     Returns
     -------
-    final_state    : WorldState after the last step
-    steps_survived : int32 scalar
-    mean_c_act     : float32 scalar — mean activation cost over all episode steps
+    final_state     : WorldState after the last step
+    steps_survived  : int32 scalar
+    mean_c_act      : float32 scalar — mean activation cost over all episode steps
+    total_raw_food  : float32 scalar — sum of uncapped food_at across all steps and
+                      food types (only accumulated while alive).  Can exceed
+                      episode_steps * n_food_types for an agent perfectly centred
+                      on every hotspot.  Normalise by (episode_steps * n_food_types)
+                      to get a score in [0, ∞); well-foraging agents typically reach
+                      values around 0.5–2.0 depending on hotspot_sigma.
     """
     k_world, k_steps = jax.random.split(key)
 
@@ -138,16 +156,17 @@ def run_brain_episode_full(
     step_keys   = jax.random.split(k_steps, wcfg.episode_steps)
 
     def body(carry, rng_key):
-        new_carry, (alive, c_act) = _brain_world_step(carry, rng_key, genome, cfg, wcfg)
-        return new_carry, (alive, c_act)
+        new_carry, (alive, c_act, raw_food) = _brain_world_step(carry, rng_key, genome, cfg, wcfg)
+        return new_carry, (alive, c_act, raw_food)
 
-    (final_world, _v_final), (alive_mask, c_act_steps) = jax.lax.scan(
+    (final_world, _v_final), (alive_mask, c_act_steps, raw_food_steps) = jax.lax.scan(
         body, (world_state, v0), step_keys
     )
 
     steps_survived = jnp.sum(alive_mask.astype(jnp.int32))
     mean_c_act     = jnp.mean(c_act_steps)
-    return final_world, steps_survived, mean_c_act
+    total_raw_food = jnp.sum(raw_food_steps)
+    return final_world, steps_survived, mean_c_act, total_raw_food
 
 
 # ── Public: population-level batch ───────────────────────────────────────────

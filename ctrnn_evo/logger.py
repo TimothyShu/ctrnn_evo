@@ -133,6 +133,8 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
         d.pop("n_in", None)
         # default n_food_types for runs predating multi-food-type support
         d.setdefault("n_food_types", 1)
+        # default fitness_mode for runs predating food-score fitness support
+        d.setdefault("fitness_mode", "survival")
         return d
 
     with open(Path(run_dir) / "config.json") as f:
@@ -249,6 +251,7 @@ def save_training_state(
     steps: "jax.Array",
     key: "jax.Array",
     generation: int,
+    raw_food: "jax.Array | None" = None,
 ) -> None:
     """
     Save the complete training state needed to resume an interrupted run.
@@ -257,6 +260,8 @@ def save_training_state(
       • All batched genome fields (prefixed with ``pop_``)
       • fitness  [pop_size] — current adjusted fitness scores
       • steps    [pop_size] — raw mean step counts (needed for collect_stats)
+      • raw_food [pop_size] — mean cumulative raw food score (optional; omitted
+                             when None so old snapshots remain valid)
       • rng_key  [2]        — current JAX PRNGKey
       • generation          — the generation number that will be collected NEXT
                              (i.e. the generation about to run when you resume)
@@ -280,13 +285,15 @@ def save_training_state(
     arrays["steps"]      = np.array(steps)
     arrays["rng_key"]    = np.array(key)
     arrays["generation"] = np.array(generation, dtype=np.int64)
+    if raw_food is not None:
+        arrays["raw_food"] = np.array(raw_food)
 
     np.savez(str(path), **arrays)
 
 
 def load_training_state(
     path: str | Path,
-) -> tuple["Genome", "jax.Array", "jax.Array", "jax.Array", int]:
+) -> "tuple[Genome, jax.Array, jax.Array, jax.Array, int, jax.Array | None]":
     """
     Reconstruct full training state from a snapshot written by save_training_state.
 
@@ -297,6 +304,7 @@ def load_training_state(
     steps      : float32 [pop_size]
     key        : JAX PRNGKey [2]
     generation : int — generation number to resume from
+    raw_food   : float32 [pop_size] or None (absent in snapshots from older runs)
     """
     archive  = np.load(str(path))
     children = [jnp.array(archive[_POP_PREFIX + field]) for field in _GENOME_FIELDS]
@@ -306,8 +314,9 @@ def load_training_state(
     steps      = jnp.array(archive["steps"])
     key        = jnp.array(archive["rng_key"])
     generation = int(archive["generation"])
+    raw_food   = jnp.array(archive["raw_food"]) if "raw_food" in archive else None
 
-    return pop, fitness, steps, key, generation
+    return pop, fitness, steps, key, generation, raw_food
 
 
 def latest_state_checkpoint(run_dir: str | Path) -> "Path | None":

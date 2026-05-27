@@ -95,6 +95,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lambda-sweep",   type=float, nargs="+", default=None, metavar="L",
                    help="test multiple lambda values in one run, each saved to modular_<L>/ subdir "
                         "(overrides --lambda-conn and --condition)")
+    p.add_argument("--fitness-mode",   type=str,   default="survival",
+                   choices=["survival", "food"],
+                   help="fitness metric: 'survival'=steps_survived/T ∈ [0,1] (default); "
+                        "'food'=cumulative raw food score / (T * n_food_types), can exceed 1.0 "
+                        "for agents that actively forage near hotspot centres")
     p.add_argument("--verbose",        action="store_true",       help="print per-generation progress")
     p.add_argument("--smoke-test",     action="store_true",       help="quick run: 2 replicates × 5 generations × 1 eval")
     p.add_argument("--quick-test",     action="store_true",       help="lambda sweep validation: 3 replicates × 150 generations × pop=500")
@@ -114,7 +119,7 @@ def warmup(cfg: Config, wcfg: WorldConfig, key: jax.Array) -> None:
     print("Warming up XLA compilation — this takes 30-90 s on first run...")
     pop = init_population(key, cfg)
     _, k = jax.random.split(key)
-    steps, _ = eval_population(k, pop, cfg, wcfg, n_evals=1)
+    steps, _, _ = eval_population(k, pop, cfg, wcfg, n_evals=1)
     steps.block_until_ready()
     print("Compilation done.\n")
 
@@ -278,7 +283,8 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Configs ───────────────────────────────────────────────────────────────
-    base_cfg = Config(population_size=args.pop_size, n_food_types=args.n_food_types)
+    base_cfg = Config(population_size=args.pop_size, n_food_types=args.n_food_types,
+                      fitness_mode=args.fitness_mode)
     wcfg     = WorldConfig(n_food_types=args.n_food_types, hotspot_drift=args.hotspot_drift,
                            hotspot_sigma=args.hotspot_sigma, metabolism=args.metabolism)
     rates    = MutationRates()
@@ -286,6 +292,7 @@ def main() -> None:
     cfg_baseline = Config(
         population_size=args.pop_size,
         n_food_types=args.n_food_types,
+        fitness_mode=args.fitness_mode,
     )
     cfg_modular = Config(
         population_size=args.pop_size,
@@ -293,6 +300,7 @@ def main() -> None:
         lambda_edge=args.lambda_edge,
         lambda_dist=args.lambda_dist,
         lambda_act=args.lambda_act,
+        fitness_mode=args.fitness_mode,
     )
 
     # ── Key schedule ──────────────────────────────────────────────────────────
@@ -310,6 +318,7 @@ def main() -> None:
     print(f"Experiment: {args.n_replicates} replicates × {args.n_generations} generations")
     print(f"  population_size = {args.pop_size}")
     print(f"  n_evals         = {args.n_evals}")
+    print(f"  fitness_mode    = {args.fitness_mode}")
     print(f"  lambda_edge     = 0.0  (baseline)  vs  {args.lambda_edge}  (modular)")
     print(f"  lambda_dist     = 0.0  (baseline)  vs  {args.lambda_dist}  (modular)")
     print(f"  lambda_act      = 0.0  (baseline)  vs  {args.lambda_act}  (modular)")
@@ -371,6 +380,7 @@ def main() -> None:
                 population_size=args.pop_size,
                 lambda_dist=lam,
                 lambda_act=args.lambda_act,
+                fitness_mode=args.fitness_mode,
             )
             # Derive a deterministic key stream for this lambda from the base seed
             lam_key = jax.random.fold_in(jax.random.PRNGKey(args.seed), int(lam * 1_000_000))

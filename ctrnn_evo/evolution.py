@@ -8,10 +8,12 @@ init_population(key, cfg)
 
 eval_population(key, pop_genomes, cfg, wcfg, n_evals=5)
     Evaluate each genome over n_evals independent episodes.
-    Returns (mean_steps[pop], mean_c_act[pop]).
+    Returns (mean_steps[pop], mean_c_act[pop], mean_raw_food[pop]).
 
-compute_fitness(steps, c_acts, pop_genomes, cfg, wcfg)
-    Normalise steps to [0,1] and apply cost penalties.
+compute_fitness(steps, c_acts, raw_food, pop_genomes, cfg, wcfg)
+    Normalise performance metric to f_raw and apply cost penalties.
+    fitness_mode="survival": f_raw = steps / episode_steps  → [0, 1]
+    fitness_mode="food":     f_raw = raw_food / (episode_steps * n_food_types)  → [0, ∞)
     Returns fitness[pop].
 
 tournament_select_idx(key, fitness, tournament_size)
@@ -71,16 +73,20 @@ def _eval_genome(
     genome: Genome,
     cfg: Config,
     wcfg: WorldConfig,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Evaluate a single genome over n_evals independent episodes.
 
-    Returns (mean_steps, mean_c_act) averaged across episodes.
+    Returns (mean_steps, mean_c_act, mean_raw_food) averaged across episodes.
     """
-    _, steps_all, c_acts_all = jax.vmap(
+    _, steps_all, c_acts_all, raw_food_all = jax.vmap(
         run_brain_episode_full, in_axes=(0, None, None, None)
     )(keys, genome, cfg, wcfg)
-    return jnp.mean(steps_all.astype(jnp.float32)), jnp.mean(c_acts_all)
+    return (
+        jnp.mean(steps_all.astype(jnp.float32)),
+        jnp.mean(c_acts_all),
+        jnp.mean(raw_food_all),
+    )
 
 
 def eval_population(
@@ -89,7 +95,7 @@ def eval_population(
     cfg: Config,
     wcfg: WorldConfig,
     n_evals: int = 5,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Evaluate the full population.
 
@@ -98,8 +104,10 @@ def eval_population(
 
     Returns
     -------
-    mean_steps  : float32 [pop_size] — average steps survived
-    mean_c_acts : float32 [pop_size] — average activation cost
+    mean_steps     : float32 [pop_size] — average steps survived
+    mean_c_acts    : float32 [pop_size] — average activation cost
+    mean_raw_food  : float32 [pop_size] — average cumulative raw food score
+                     (sum of uncapped food_at over alive steps, averaged across evals)
     """
     # Split into [pop_size, n_evals, 2] keys
     flat_keys  = jax.random.split(key, cfg.population_size * n_evals)
@@ -111,21 +119,32 @@ def eval_population(
 
 
 def compute_fitness(
-    steps: jnp.ndarray,        # [pop_size] float32 mean steps
+    steps: jnp.ndarray,        # [pop_size] float32 mean steps survived
     c_acts: jnp.ndarray,       # [pop_size] float32 mean activation cost
+    raw_food: jnp.ndarray,     # [pop_size] float32 mean cumulative raw food score
     pop_genomes: Genome,
     cfg: Config,
     wcfg: WorldConfig,
 ) -> jnp.ndarray:
     """
-    Convert raw step counts to adjusted fitness scores.
+    Convert raw evaluation metrics to adjusted fitness scores.
 
-        f_raw    = mean_steps / episode_steps          (normalised to [0, 1])
-        fitness  = f_raw - lambda_conn * C_conn - lambda_act * C_act
+    fitness_mode="survival" (default):
+        f_raw = mean_steps / episode_steps  → [0, 1]
+
+    fitness_mode="food":
+        f_raw = mean_raw_food / (episode_steps * n_food_types)
+        Can exceed 1.0 for agents that actively forage near hotspot centres.
+
+    Cost penalty (applied in both modes):
+        fitness = f_raw - lambda_edge * C_edge - lambda_dist * C_dist - lambda_act * C_act
 
     Returns fitness [pop_size].
     """
-    f_raw = steps / float(wcfg.episode_steps)
+    if cfg.fitness_mode == "food":
+        f_raw = raw_food / float(wcfg.episode_steps * wcfg.n_food_types)
+    else:  # "survival" (default)
+        f_raw = steps / float(wcfg.episode_steps)
     return jax.vmap(adjusted_fitness, in_axes=(0, 0, 0, None))(
         f_raw, pop_genomes, c_acts, cfg
     )
@@ -223,21 +242,26 @@ def evolve_step(
 
 def collect_stats(
     generation: int,
-    fitness: jnp.ndarray,       # [pop_size]
-    steps: jnp.ndarray,         # [pop_size]
+    fitness: jnp.ndarray,           # [pop_size]
+    steps: jnp.ndarray,             # [pop_size]
     pop_genomes: Genome,
     cfg: Config,
+    raw_food: "jnp.ndarray | None" = None,   # [pop_size] — optional
+    wcfg: "WorldConfig | None"     = None,   # needed to normalise raw_food
 ) -> dict:
     """
     Compute summary statistics for the current generation.
 
     All values are plain Python floats/ints for easy serialisation.
+    If raw_food and wcfg are provided, mean_food_score is added to the dict
+    (normalised by episode_steps * n_food_types so it is comparable to f_raw
+    under fitness_mode="food").
     """
-    edge_costs = jax.vmap(edge_count_cost)(pop_genomes)          # [pop_size]
-    wiring_costs = jax.vmap(dist_cost)(pop_genomes)              # [pop_size]
-    n_active   = jnp.sum(pop_genomes.active_mask, axis=-1)       # [pop_size]
+    edge_costs   = jax.vmap(edge_count_cost)(pop_genomes)          # [pop_size]
+    wiring_costs = jax.vmap(dist_cost)(pop_genomes)                # [pop_size]
+    n_active     = jnp.sum(pop_genomes.active_mask, axis=-1)       # [pop_size]
 
-    return {
+    stats = {
         "generation":       generation,
         "max_fitness":      float(jnp.max(fitness)),
         "mean_fitness":     float(jnp.mean(fitness)),
@@ -247,6 +271,12 @@ def collect_stats(
         "mean_edge_cost":   float(jnp.mean(edge_costs)),
         "mean_wiring_cost": float(jnp.mean(wiring_costs)),
     }
+
+    if raw_food is not None and wcfg is not None:
+        norm = float(wcfg.episode_steps * wcfg.n_food_types)
+        stats["mean_food_score"] = float(jnp.mean(raw_food) / norm)
+
+    return stats
 
 
 # ── Full evolutionary run ─────────────────────────────────────────────────────
@@ -319,15 +349,15 @@ def run_evolution(
     """
     # ── Initialise or resume ─────────────────────────────────────────────────
     if resume_from is not None:
-        pop, fitness, steps, key, start_gen = load_training_state(resume_from)
+        pop, fitness, steps, key, start_gen, raw_food = load_training_state(resume_from)
         print(f"  Resuming from generation {start_gen} "
               f"(loaded {Path(resume_from).name})")
     else:
         start_gen = 0
         key, k_init, k_eval = jax.random.split(key, 3)
-        pop           = init_population(k_init, cfg)
-        steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
-        fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+        pop                   = init_population(k_init, cfg)
+        steps, c_acts, raw_food = eval_population(k_eval, pop, cfg, wcfg, n_evals)
+        fitness               = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg)
 
     history: list[dict] = []
 
@@ -338,7 +368,7 @@ def run_evolution(
     # ── Generation loop ───────────────────────────────────────────────────────
     for gen in range(start_gen, n_generations):
         # Stats on current (already-evaluated) population
-        stats = collect_stats(gen, fitness, steps, pop, cfg)
+        stats = collect_stats(gen, fitness, steps, pop, cfg, raw_food=raw_food, wcfg=wcfg)
         history.append(stats)
 
         if callback is not None:
@@ -352,9 +382,9 @@ def run_evolution(
 
         # Evolve → evaluate
         key, k_step, k_eval = jax.random.split(key, 3)
-        pop           = evolve_step(k_step, pop, fitness, rates, cfg)
-        steps, c_acts = eval_population(k_eval, pop, cfg, wcfg, n_evals)
-        fitness       = compute_fitness(steps, c_acts, pop, cfg, wcfg)
+        pop                     = evolve_step(k_step, pop, fitness, rates, cfg)
+        steps, c_acts, raw_food = eval_population(k_eval, pop, cfg, wcfg, n_evals)
+        fitness                 = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg)
 
         # State snapshot — labelled with the generation about to be collected
         next_gen = gen + 1
@@ -363,7 +393,7 @@ def run_evolution(
             and next_gen % state_checkpoint_every == 0
         ):
             snap_path = state_checkpoint_dir / f"state_gen_{next_gen:06d}.npz"
-            save_training_state(snap_path, pop, fitness, steps, key, next_gen)
+            save_training_state(snap_path, pop, fitness, steps, key, next_gen, raw_food=raw_food)
 
     # ── Extract best genome (unbatched) ──────────────────────────────────────
     best_idx    = int(jnp.argmax(fitness))

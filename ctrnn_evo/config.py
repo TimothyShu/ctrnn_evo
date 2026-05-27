@@ -33,6 +33,12 @@ class Config:
     population_size:  int = 1000
     tournament_size:  int = 4
 
+    # Fitness metric
+    # "survival": steps_survived / episode_steps  → [0, 1]
+    # "food":     cumulative raw food score / (episode_steps * n_food_types)
+    #             → can exceed 1.0 for agents that actively forage near hotspots
+    fitness_mode: str = "survival"
+
     # Derived — set by __post_init__, not a constructor argument
     n_in: int = field(init=False)
 

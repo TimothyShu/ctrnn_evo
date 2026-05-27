@@ -380,8 +380,8 @@ def pop(cfg):
     key = jax.random.PRNGKey(42)
     k1, k2 = jax.random.split(key)
     population = init_population(k1, cfg)
-    steps, c_acts = eval_population(k2, population, cfg, wcfg_small, n_evals=1)
-    fitness = compute_fitness(steps, c_acts, population, cfg, wcfg_small)
+    steps, c_acts, raw_food = eval_population(k2, population, cfg, wcfg_small, n_evals=1)
+    fitness = compute_fitness(steps, c_acts, raw_food, population, cfg, wcfg_small)
     return population, fitness, steps
 
 
@@ -400,7 +400,7 @@ def test_load_training_state_generation(tmp_base, pop, cfg):
     path = run_dir / "checkpoints" / "state_gen_000050.npz"
     key = jax.random.PRNGKey(8)
     save_training_state(path, population, fitness, steps, key, generation=50)
-    _, _, _, _, gen = load_training_state(path)
+    _, _, _, _, gen, _ = load_training_state(path)
     assert gen == 50
 
 
@@ -410,7 +410,7 @@ def test_load_training_state_pop_shape(tmp_base, pop, cfg):
     path = run_dir / "checkpoints" / "state_gen_000010.npz"
     key = jax.random.PRNGKey(9)
     save_training_state(path, population, fitness, steps, key, generation=10)
-    pop2, _, _, _, _ = load_training_state(path)
+    pop2, _, _, _, _, _ = load_training_state(path)
     assert pop2.weight_matrix.shape == (cfg.population_size, cfg.N_max, cfg.N_max), (
         f"Expected pop shape ({cfg.population_size}, {cfg.N_max}, {cfg.N_max}), "
         f"got {pop2.weight_matrix.shape}"
@@ -423,7 +423,7 @@ def test_load_training_state_fitness_close(tmp_base, pop, cfg):
     path = run_dir / "checkpoints" / "state_gen_000020.npz"
     key = jax.random.PRNGKey(10)
     save_training_state(path, population, fitness, steps, key, generation=20)
-    _, fit2, _, _, _ = load_training_state(path)
+    _, fit2, _, _, _, _ = load_training_state(path)
     assert jnp.allclose(fit2, fitness, atol=1e-6), "Fitness mismatch after roundtrip"
 
 
@@ -433,7 +433,7 @@ def test_load_training_state_key_preserved(tmp_base, pop, cfg):
     path = run_dir / "checkpoints" / "state_gen_000030.npz"
     key = jax.random.PRNGKey(2025)
     save_training_state(path, population, fitness, steps, key, generation=30)
-    _, _, _, key2, _ = load_training_state(path)
+    _, _, _, key2, _, _ = load_training_state(path)
     assert jnp.array_equal(key2, key), "RNG key mismatch after roundtrip"
 
 
@@ -444,7 +444,7 @@ def test_load_training_state_pop_active_mask(tmp_base, pop, cfg):
     path = run_dir / "checkpoints" / "state_gen_000040.npz"
     key = jax.random.PRNGKey(11)
     save_training_state(path, population, fitness, steps, key, generation=40)
-    pop2, _, _, _, _ = load_training_state(path)
+    pop2, _, _, _, _, _ = load_training_state(path)
     assert jnp.array_equal(pop2.active_mask, population.active_mask)
 
 
@@ -508,7 +508,7 @@ def test_run_evolution_state_file_loadable(cfg, wcfg, rates, tmp_base):
         state_checkpoint_every=2,
     )
     state_path = ckpt_dir / "state_gen_000002.npz"
-    pop2, fit2, steps2, key2, gen2 = load_training_state(state_path)
+    pop2, fit2, steps2, key2, gen2, _ = load_training_state(state_path)
     assert gen2 == 2
     assert pop2.weight_matrix.shape == (cfg.population_size, cfg.N_max, cfg.N_max)
     assert fit2.shape == (cfg.population_size,)
