@@ -139,6 +139,13 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
         d.setdefault("position_sensors", False)
         # default penalty_warmup_gens for runs predating warm-up support
         d.setdefault("penalty_warmup_gens", 0)
+        # defaults for proportional penalty fracs (runs predating this feature)
+        d.setdefault("dist_frac",  0.0)
+        d.setdefault("act_frac",   0.0)
+        d.setdefault("edge_frac",  0.0)
+        d.setdefault("C0_wiring",  77.0)
+        d.setdefault("C0_act",     5.0)
+        d.setdefault("C0_edge",    154.0)
         return d
 
     def _migrate_wcfg(d: dict) -> dict:

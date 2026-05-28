@@ -24,7 +24,7 @@ class Config:
     # Initial edge density (fraction of possible edges active at init)
     init_edge_density: float = 0.15
 
-    # Cost coefficients (0 = disabled)
+    # Cost coefficients — absolute mode (0 = disabled)
     lambda_edge: float = 0.0   # penalises edge count regardless of length
     lambda_dist: float = 0.0   # penalises total wire length (distance-weighted)
     lambda_act:  float = 0.0   # penalises mean neural activation per tick
@@ -33,6 +33,26 @@ class Config:
     # generations, so early-generation networks are not pruned before any
     # foraging strategy has evolved.  0 = disabled (lambdas are constant).
     penalty_warmup_gens: int = 0
+
+    # Cost fractions — proportional mode (0 = disabled; takes priority over λ when > 0)
+    #
+    # Penalty = frac × f_raw × (C / C0_ref)
+    #
+    # This keeps the penalty as a fixed percentage of raw fitness when the
+    # network is at reference cost C0_ref, making the regularisation scale
+    # automatically with the fitness signal.  Works identically whether
+    # f_raw ~ 0.009 (food-score gen 0) or f_raw ~ 0.9 (survival), so no
+    # per-experiment recalibration of λ is needed.
+    #
+    # Reference costs (C0_*) are the empirically observed initial values for
+    # a random 64-neuron network in the default arena.  Override if N_max or
+    # arena_size differ significantly.
+    dist_frac:  float = 0.0    # wiring-length penalty as fraction of f_raw
+    act_frac:   float = 0.0    # activation penalty as fraction of f_raw
+    edge_frac:  float = 0.0    # edge-count penalty as fraction of f_raw
+    C0_wiring:  float = 77.0   # reference wiring cost  (random init, default params)
+    C0_act:     float = 5.0    # reference activation cost (random init, ~32 active neurons)
+    C0_edge:    float = 154.0  # reference edge count   (random init, default params)
 
     # Evolution
     population_size:  int = 1000

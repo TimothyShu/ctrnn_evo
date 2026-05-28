@@ -66,9 +66,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n-generations", type=int,   default=500,    help="generations per run")
     p.add_argument("--n-evals",       type=int,   default=5,      help="episodes per fitness estimate")
     p.add_argument("--pop-size",      type=int,   default=1000,   help="population size")
-    p.add_argument("--lambda-edge",   type=float, default=0.0,    help="edge-count cost coefficient (penalises every edge equally)")
-    p.add_argument("--lambda-dist",   type=float, default=0.001,  help="distance-weighted wiring cost coefficient (penalises long edges more)")
-    p.add_argument("--lambda-act",    type=float, default=0.0,    help="activation cost coefficient (penalises mean firing per tick)")
+    p.add_argument("--lambda-edge",   type=float, default=0.0,    help="edge-count cost coefficient — absolute mode (penalises every edge equally)")
+    p.add_argument("--lambda-dist",   type=float, default=0.001,  help="distance-weighted wiring cost coefficient — absolute mode (penalises long edges more)")
+    p.add_argument("--lambda-act",    type=float, default=0.0,    help="activation cost coefficient — absolute mode (penalises mean firing per tick)")
+    p.add_argument("--dist-frac",     type=float, default=0.0,
+                   help="wiring penalty as a fraction of f_raw (proportional mode, overrides --lambda-dist when >0). "
+                        "E.g. 0.05 = 5%% of fitness deducted when wiring is at reference density. "
+                        "Self-calibrates across fitness regimes — no recalibration needed.")
+    p.add_argument("--act-frac",      type=float, default=0.0,
+                   help="activation penalty as a fraction of f_raw (proportional mode, overrides --lambda-act when >0).")
+    p.add_argument("--edge-frac",     type=float, default=0.0,
+                   help="edge-count penalty as a fraction of f_raw (proportional mode, overrides --lambda-edge when >0).")
     p.add_argument("--n-food-types",  type=int,   default=1,      help="number of distinct food types (each with its own energy resource and sensor channel)")
     p.add_argument("--hotspot-drift",  type=float, default=0.6,   help="std-dev of per-step hotspot Gaussian drift (default 0.6; use ~0.2 with strip placement to keep types separated)")
     p.add_argument("--hotspot-sigma",  type=float, default=5.0,   help="Gaussian radius of food reward patch (default 5.0; smaller = harder to find food)")
@@ -311,6 +319,9 @@ def main() -> None:
         lambda_edge=args.lambda_edge,
         lambda_dist=args.lambda_dist,
         lambda_act=args.lambda_act,
+        dist_frac=args.dist_frac,
+        act_frac=args.act_frac,
+        edge_frac=args.edge_frac,
         fitness_mode=args.fitness_mode,
         position_sensors=args.position_sensors,
         penalty_warmup_gens=args.penalty_warmup_gens,
@@ -336,6 +347,10 @@ def main() -> None:
     print(f"  lambda_edge     = 0.0  (baseline)  vs  {args.lambda_edge}  (modular)")
     print(f"  lambda_dist     = 0.0  (baseline)  vs  {args.lambda_dist}  (modular)")
     print(f"  lambda_act      = 0.0  (baseline)  vs  {args.lambda_act}  (modular)")
+    if args.dist_frac or args.act_frac or args.edge_frac:
+        print(f"  dist_frac       = 0.0  (baseline)  vs  {args.dist_frac}  (modular)  [proportional]")
+        print(f"  act_frac        = 0.0  (baseline)  vs  {args.act_frac}   (modular)  [proportional]")
+        print(f"  edge_frac       = 0.0  (baseline)  vs  {args.edge_frac}  (modular)  [proportional]")
     print(f"  penalty_warmup  = {args.penalty_warmup_gens} gens")
     print(f"  output_dir      = {output_dir.resolve()}\n")
 
@@ -395,6 +410,9 @@ def main() -> None:
                 population_size=args.pop_size,
                 lambda_dist=lam,
                 lambda_act=args.lambda_act,
+                dist_frac=args.dist_frac,
+                act_frac=args.act_frac,
+                edge_frac=args.edge_frac,
                 fitness_mode=args.fitness_mode,
                 position_sensors=args.position_sensors,
                 penalty_warmup_gens=args.penalty_warmup_gens,
