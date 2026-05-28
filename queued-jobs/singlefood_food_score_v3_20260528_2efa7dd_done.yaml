@@ -1,0 +1,20 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  lambda-dist: 0.00005
+  lambda-act: 0.0001
+  penalty-warmup-gens: 200
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  condition: both
+  output-dir: runs/singlefood/food_score_v3
+notes: >
+  Food-score + position sensors + penalty warm-up. Fixes v2's bimodal replicate
+  split: λ_dist and λ_act ramp linearly from 0 to full over 200 gens, so networks
+  can establish foraging strategy before wiring cost drives aggressive pruning.
+  At gen 0 penalty=0%, gen 100=50% of target, gen 200=100%. Same lambdas as v2.
+  Expected runtime ~12 hrs.
