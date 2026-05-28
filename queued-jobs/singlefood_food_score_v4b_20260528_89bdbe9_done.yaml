@@ -1,0 +1,19 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.05
+  act-frac: 0.01
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  condition: modular
+  output-dir: runs/singlefood/food_score_v4b
+notes: >
+  Proportional penalty, lower act penalty vs v4. dist_frac=0.05 unchanged;
+  act_frac reduced from 0.05 to 0.01 (1% of f_raw at reference activation
+  C0_act=5.0). Tests whether suppressing firing rate as aggressively hurts
+  performance — activation dynamics may be load-bearing for navigation.
+  Modular-only (baseline unchanged). ~6 hrs.
