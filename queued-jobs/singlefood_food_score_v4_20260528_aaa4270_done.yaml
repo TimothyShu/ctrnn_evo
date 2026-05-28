@@ -1,0 +1,19 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.05
+  act-frac: 0.05
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  condition: modular
+  output-dir: runs/singlefood/food_score_v4
+notes: >
+  Proportional penalty fracs replacing absolute lambdas. dist_frac=0.05 means
+  wiring penalty is always 5% of f_raw at reference density (C0=77), scaling
+  automatically with food signal — no warmup needed (5% at gen 0 is safe vs
+  41% with absolute lambda in v2). act_frac=0.05 similarly. Baseline unchanged
+  from v2/v3 so modular-only. ~6 hrs.
