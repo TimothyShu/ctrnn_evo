@@ -29,6 +29,11 @@ class Config:
     lambda_dist: float = 0.0   # penalises total wire length (distance-weighted)
     lambda_act:  float = 0.0   # penalises mean neural activation per tick
 
+    # Penalty warm-up — ramp all λ from 0 to their full values over this many
+    # generations, so early-generation networks are not pruned before any
+    # foraging strategy has evolved.  0 = disabled (lambdas are constant).
+    penalty_warmup_gens: int = 0
+
     # Evolution
     population_size:  int = 1000
     tournament_size:  int = 4

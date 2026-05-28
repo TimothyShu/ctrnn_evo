@@ -104,6 +104,10 @@ def parse_args() -> argparse.Namespace:
                    help="give the agent normalised (x, y) position as two extra input sensors "
                         "(appended after food/energy sensors). Adds 2 to n_in. Without this, "
                         "agents starting far from food have zero gradient and run open-loop.")
+    p.add_argument("--penalty-warmup-gens", type=int, default=0,
+                   help="linearly ramp all λ penalties from 0 to their full values over this many "
+                        "generations (0 = disabled, penalties are constant from gen 0). "
+                        "Prevents early-generation over-pruning when food signal is weak.")
     p.add_argument("--verbose",        action="store_true",       help="print per-generation progress")
     p.add_argument("--smoke-test",     action="store_true",       help="quick run: 2 replicates × 5 generations × 1 eval")
     p.add_argument("--quick-test",     action="store_true",       help="lambda sweep validation: 3 replicates × 150 generations × pop=500")
@@ -299,6 +303,7 @@ def main() -> None:
         n_food_types=args.n_food_types,
         fitness_mode=args.fitness_mode,
         position_sensors=args.position_sensors,
+        penalty_warmup_gens=args.penalty_warmup_gens,
     )
     cfg_modular = Config(
         population_size=args.pop_size,
@@ -308,6 +313,7 @@ def main() -> None:
         lambda_act=args.lambda_act,
         fitness_mode=args.fitness_mode,
         position_sensors=args.position_sensors,
+        penalty_warmup_gens=args.penalty_warmup_gens,
     )
 
     # ── Key schedule ──────────────────────────────────────────────────────────
@@ -330,6 +336,7 @@ def main() -> None:
     print(f"  lambda_edge     = 0.0  (baseline)  vs  {args.lambda_edge}  (modular)")
     print(f"  lambda_dist     = 0.0  (baseline)  vs  {args.lambda_dist}  (modular)")
     print(f"  lambda_act      = 0.0  (baseline)  vs  {args.lambda_act}  (modular)")
+    print(f"  penalty_warmup  = {args.penalty_warmup_gens} gens")
     print(f"  output_dir      = {output_dir.resolve()}\n")
 
     # ── Early stop function ───────────────────────────────────────────────────
@@ -390,6 +397,7 @@ def main() -> None:
                 lambda_act=args.lambda_act,
                 fitness_mode=args.fitness_mode,
                 position_sensors=args.position_sensors,
+                penalty_warmup_gens=args.penalty_warmup_gens,
             )
             # Derive a deterministic key stream for this lambda from the base seed
             lam_key = jax.random.fold_in(jax.random.PRNGKey(args.seed), int(lam * 1_000_000))

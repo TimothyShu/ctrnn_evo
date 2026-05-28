@@ -137,6 +137,8 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
         d.setdefault("fitness_mode", "survival")
         # default position_sensors for runs predating proprioceptive sensor support
         d.setdefault("position_sensors", False)
+        # default penalty_warmup_gens for runs predating warm-up support
+        d.setdefault("penalty_warmup_gens", 0)
         return d
 
     def _migrate_wcfg(d: dict) -> dict:

@@ -39,6 +39,7 @@ run_evolution(key, n_generations, cfg, wcfg, rates, n_evals, callback)
 
 from __future__ import annotations
 
+import dataclasses
 import jax
 import jax.numpy as jnp
 
@@ -125,6 +126,7 @@ def compute_fitness(
     pop_genomes: Genome,
     cfg: Config,
     wcfg: WorldConfig,
+    generation: int = 0,
 ) -> jnp.ndarray:
     """
     Convert raw evaluation metrics to adjusted fitness scores.
@@ -139,8 +141,24 @@ def compute_fitness(
     Cost penalty (applied in both modes):
         fitness = f_raw - lambda_edge * C_edge - lambda_dist * C_dist - lambda_act * C_act
 
+    Penalty warm-up (cfg.penalty_warmup_gens > 0):
+        All three λ coefficients are linearly scaled by
+        ramp = min(generation / penalty_warmup_gens, 1.0),
+        so at generation 0 penalties are zero and at generation
+        penalty_warmup_gens they reach their configured values.
+
     Returns fitness [pop_size].
     """
+    # Apply warm-up ramp: scale all λ by ramp ∈ [0, 1]
+    if cfg.penalty_warmup_gens > 0:
+        ramp = min(generation / cfg.penalty_warmup_gens, 1.0)
+        cfg = dataclasses.replace(
+            cfg,
+            lambda_edge=cfg.lambda_edge * ramp,
+            lambda_dist=cfg.lambda_dist * ramp,
+            lambda_act=cfg.lambda_act  * ramp,
+        )
+
     if cfg.fitness_mode == "food":
         f_raw = raw_food / float(wcfg.episode_steps * wcfg.n_food_types)
     else:  # "survival" (default)
@@ -357,7 +375,8 @@ def run_evolution(
         key, k_init, k_eval = jax.random.split(key, 3)
         pop                   = init_population(k_init, cfg)
         steps, c_acts, raw_food = eval_population(k_eval, pop, cfg, wcfg, n_evals)
-        fitness               = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg)
+        fitness               = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg,
+                                                generation=0)
 
     history: list[dict] = []
 
@@ -384,7 +403,8 @@ def run_evolution(
         key, k_step, k_eval = jax.random.split(key, 3)
         pop                     = evolve_step(k_step, pop, fitness, rates, cfg)
         steps, c_acts, raw_food = eval_population(k_eval, pop, cfg, wcfg, n_evals)
-        fitness                 = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg)
+        fitness                 = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg,
+                                                  generation=gen + 1)
 
         # State snapshot — labelled with the generation about to be collected
         next_gen = gen + 1
