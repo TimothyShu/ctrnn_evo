@@ -1,0 +1,21 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.05
+  act-frac: 0.10
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  condition: modular
+  output-dir: runs/singlefood/food_score_v5
+notes: >
+  Normalised activation cost: c_act now measures mean |tanh(v)| per active
+  neuron (in [0,1]) rather than total activity summed across neurons. C0_act
+  updated from 5.0 to 1.0 (theoretical saturation ceiling, no calibration
+  needed). act_frac=0.10 gives ~2% effective penalty at typical gen-0 firing
+  (~0.21 mean rate), 10% maximum at full saturation. Combined with
+  dist_frac=0.05 (~5% at reference wiring), total gen-0 effective penalty
+  ~7% — a significant improvement over v4's accidental 16%. Modular only. ~6 hrs.

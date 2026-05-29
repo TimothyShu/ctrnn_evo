@@ -51,7 +51,8 @@ class Config:
     act_frac:   float = 0.0    # activation penalty as fraction of f_raw
     edge_frac:  float = 0.0    # edge-count penalty as fraction of f_raw
     C0_wiring:  float = 77.0   # reference wiring cost  (random init, default params)
-    C0_act:     float = 5.0    # reference activation cost (random init, ~32 active neurons)
+    C0_act:     float = 1.0    # theoretical max of normalised c_act (mean |tanh(v)| ∈ [0,1]);
+                               # no calibration needed — saturation ceiling is always 1.0
     C0_edge:    float = 154.0  # reference edge count   (random init, default params)
 
     # Evolution

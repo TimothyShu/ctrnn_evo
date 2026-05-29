@@ -144,7 +144,7 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
         d.setdefault("act_frac",   0.0)
         d.setdefault("edge_frac",  0.0)
         d.setdefault("C0_wiring",  77.0)
-        d.setdefault("C0_act",     5.0)
+        d.setdefault("C0_act",     1.0)
         d.setdefault("C0_edge",    154.0)
         return d
 
