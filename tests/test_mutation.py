@@ -455,6 +455,30 @@ class TestPruneIsolated:
         g_pruned = prune_isolated(g_isolated, cfg)
         assert not bool(g_pruned.active_mask[new_slot]), "Isolated hidden node was not pruned"
 
+    def test_sink_hidden_neuron_deactivated(self, genome, cfg):
+        """A hidden neuron with only incoming edges (no outputs) should be deactivated."""
+        g = add_node(jax.random.PRNGKey(203), genome, cfg)
+        new_slot = int(np.argmax(np.array(g.active_mask) & ~np.array(genome.active_mask)))
+        # Keep one incoming edge, clear all outgoing
+        new_edges = g.edge_mask.at[new_slot, :].set(False)  # no outgoing
+        g_sink = replace(g, edge_mask=new_edges)
+        # Only run if the new node actually has an incoming edge
+        if np.any(np.array(g_sink.edge_mask)[:, new_slot] & np.array(g_sink.active_mask)):
+            g_pruned = prune_isolated(g_sink, cfg)
+            assert not bool(g_pruned.active_mask[new_slot]), "Sink hidden node was not pruned"
+
+    def test_source_hidden_neuron_deactivated(self, genome, cfg):
+        """A hidden neuron with only outgoing edges (no inputs) should be deactivated."""
+        g = add_node(jax.random.PRNGKey(204), genome, cfg)
+        new_slot = int(np.argmax(np.array(g.active_mask) & ~np.array(genome.active_mask)))
+        # Keep one outgoing edge, clear all incoming
+        new_edges = g.edge_mask.at[:, new_slot].set(False)  # no incoming
+        g_source = replace(g, edge_mask=new_edges)
+        # Only run if the new node actually has an outgoing edge
+        if np.any(np.array(g_source.edge_mask)[new_slot, :] & np.array(g_source.active_mask)):
+            g_pruned = prune_isolated(g_source, cfg)
+            assert not bool(g_pruned.active_mask[new_slot]), "Source hidden node was not pruned"
+
     def test_connected_neurons_preserved(self, genome, cfg):
         """Neurons that have at least one active edge must not be deactivated."""
         active_pairs = genome.active_mask[:, None] & genome.active_mask[None, :]

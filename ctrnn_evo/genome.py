@@ -55,10 +55,11 @@ def prune_isolated(genome: Genome, cfg: Config) -> Genome:
     """
     active_pairs = genome.active_mask[:, None] & genome.active_mask[None, :]
     active_edges = genome.edge_mask & active_pairs
-    has_any_edge = jnp.any(active_edges, axis=0) | jnp.any(active_edges, axis=1)
+    has_in  = jnp.any(active_edges, axis=0)   # receives signal from another active neuron
+    has_out = jnp.any(active_edges, axis=1)   # sends signal to another active neuron
 
     hidden      = jnp.zeros(cfg.N_max, dtype=bool).at[cfg.n_in: cfg.N_max - cfg.n_out].set(True)
-    new_active  = genome.active_mask & (has_any_edge | ~hidden)
+    new_active  = genome.active_mask & ((has_in & has_out) | ~hidden)
     new_edges   = genome.edge_mask & new_active[:, None] & new_active[None, :]
 
     return replace(genome, active_mask=new_active, edge_mask=new_edges)
