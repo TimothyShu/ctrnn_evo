@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import jax
 import jax.numpy as jnp
@@ -43,6 +43,25 @@ jax.tree_util.register_pytree_node(
     ),
     lambda _, children: Genome(*children),
 )
+
+
+def prune_isolated(genome: Genome, cfg: Config) -> Genome:
+    """
+    Deactivate hidden neurons that have no edges (incoming or outgoing) among
+    active neurons.  I/O neurons are always kept regardless of connectivity.
+
+    Called by random_genome to guarantee no isolated neurons at initialisation,
+    and by mutate() after every structural mutation step.
+    """
+    active_pairs = genome.active_mask[:, None] & genome.active_mask[None, :]
+    active_edges = genome.edge_mask & active_pairs
+    has_any_edge = jnp.any(active_edges, axis=0) | jnp.any(active_edges, axis=1)
+
+    hidden      = jnp.zeros(cfg.N_max, dtype=bool).at[cfg.n_in: cfg.N_max - cfg.n_out].set(True)
+    new_active  = genome.active_mask & (has_any_edge | ~hidden)
+    new_edges   = genome.edge_mask & new_active[:, None] & new_active[None, :]
+
+    return replace(genome, active_mask=new_active, edge_mask=new_edges)
 
 
 def random_genome(key: jax.Array, cfg: Config, n_active: int | None = None) -> Genome:
@@ -93,7 +112,7 @@ def random_genome(key: jax.Array, cfg: Config, n_active: int | None = None) -> G
     candidate = jax.random.uniform(keys[6], (cfg.N_max, cfg.N_max)) < cfg.init_edge_density
     edge_mask = candidate & active_mask[:, None] & active_mask[None, :]
 
-    return Genome(
+    return prune_isolated(Genome(
         active_mask=active_mask,
         neuron_type=neuron_type,
         tau=tau,
@@ -101,7 +120,7 @@ def random_genome(key: jax.Array, cfg: Config, n_active: int | None = None) -> G
         position=position,
         weight_matrix=weight_matrix,
         edge_mask=edge_mask,
-    )
+    ), cfg)
 
 
 def effective_weights(genome: Genome) -> jnp.ndarray:

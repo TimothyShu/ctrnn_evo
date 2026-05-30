@@ -29,6 +29,8 @@ import numpy as np
 import pytest
 
 from ctrnn_evo import Config, random_genome, validate_genome, E, FSI, SII
+from dataclasses import replace
+
 from ctrnn_evo.mutation import (
     perturb_weights,
     perturb_tau,
@@ -40,6 +42,7 @@ from ctrnn_evo.mutation import (
     add_edge,
     remove_edge,
     mutate,
+    prune_isolated,
     MutationRates,
 )
 
@@ -294,6 +297,18 @@ class TestAddNode:
         assert jnp.array_equal(g2.active_mask[:cfg.n_in],  genome_sparse.active_mask[:cfg.n_in])
         assert jnp.array_equal(g2.active_mask[-cfg.n_out:], genome_sparse.active_mask[-cfg.n_out:])
 
+    def test_new_node_has_one_incoming_and_one_outgoing_edge(self, genome_sparse, cfg):
+        """New node must have ≥1 incoming and ≥1 outgoing edge among active neurons."""
+        g2 = add_node(jax.random.PRNGKey(67), genome_sparse, cfg)
+        new_slots = np.where(np.array(g2.active_mask) & ~np.array(genome_sparse.active_mask))[0]
+        assert len(new_slots) == 1, "Expected exactly one new node"
+        slot = int(new_slots[0])
+        active = np.array(g2.active_mask)
+        has_in  = bool(np.any(np.array(g2.edge_mask)[:, slot] & active))
+        has_out = bool(np.any(np.array(g2.edge_mask)[slot, :] & active))
+        assert has_in,  "New node has no incoming edges"
+        assert has_out, "New node has no outgoing edges"
+
     def test_vmappable(self, cfg):
         keys  = jax.random.split(jax.random.PRNGKey(65), 32)
         pop   = jax.vmap(random_genome, in_axes=(0, None))(keys, cfg)
@@ -424,6 +439,51 @@ class TestRemoveEdge:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# prune_isolated
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPruneIsolated:
+    def test_isolated_hidden_neuron_deactivated(self, genome, cfg):
+        """A hidden neuron with no active edges should be deactivated."""
+        g = add_node(jax.random.PRNGKey(200), genome, cfg)
+        new_slot = int(np.argmax(np.array(g.active_mask) & ~np.array(genome.active_mask)))
+        # Manually strip all edges for that slot
+        new_edges = g.edge_mask.at[new_slot, :].set(False).at[:, new_slot].set(False)
+        g_isolated = replace(g, edge_mask=new_edges)
+        g_pruned = prune_isolated(g_isolated, cfg)
+        assert not bool(g_pruned.active_mask[new_slot]), "Isolated hidden node was not pruned"
+
+    def test_connected_neurons_preserved(self, genome, cfg):
+        """Neurons that have at least one active edge must not be deactivated."""
+        active_pairs = genome.active_mask[:, None] & genome.active_mask[None, :]
+        has_edge = (
+            jnp.any(genome.edge_mask & active_pairs, axis=0) |
+            jnp.any(genome.edge_mask & active_pairs, axis=1)
+        )
+        connected_active = genome.active_mask & has_edge
+        g2 = prune_isolated(genome, cfg)
+        assert jnp.all(g2.active_mask[connected_active]), "Connected neuron was wrongly pruned"
+
+    def test_io_neurons_never_pruned(self, cfg):
+        """I/O neurons must not be deactivated even when they have no edges at all."""
+        g = random_genome(jax.random.PRNGKey(201), cfg)
+        g_no_edges = replace(g, edge_mask=jnp.zeros_like(g.edge_mask))
+        g_pruned = prune_isolated(g_no_edges, cfg)
+        assert jnp.all(g_pruned.active_mask[:cfg.n_in]),   "Input neurons were pruned"
+        assert jnp.all(g_pruned.active_mask[-cfg.n_out:]), "Output neurons were pruned"
+
+    def test_vmappable(self, cfg):
+        keys = jax.random.split(jax.random.PRNGKey(202), 32)
+        pop  = jax.vmap(random_genome, in_axes=(0, None))(keys, cfg)
+        pop2 = jax.vmap(prune_isolated, in_axes=(0, None))(pop, cfg)
+        assert pop2.active_mask.shape == (32, cfg.N_max)
+
+    def test_valid_after(self, genome, cfg):
+        g2 = prune_isolated(genome, cfg)
+        validate_genome(g2, cfg)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # mutate (combined operator)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -440,6 +500,22 @@ class TestMutate:
         rates = MutationRates()
         pop2  = jax.vmap(mutate, in_axes=(0, 0, None, None))(keys2, pop, cfg, rates)
         assert pop2.active_mask.shape == (64, cfg.N_max)
+
+    def test_no_isolated_hidden_neurons_after_mutate(self, cfg):
+        """After mutate(), no active hidden neuron should have zero active edges."""
+        rates = MutationRates(add_node_prob=1.0, remove_edge_prob=0.5)
+        P     = 64
+        keys  = jax.random.split(jax.random.PRNGKey(110), P)
+        pop   = jax.vmap(random_genome, in_axes=(0, None))(keys, cfg)
+        keys2 = jax.random.split(jax.random.PRNGKey(111), P)
+        pop2  = jax.vmap(mutate, in_axes=(0, 0, None, None))(keys2, pop, cfg, rates)
+
+        active_pairs = pop2.active_mask[:, :, None] * pop2.active_mask[:, None, :]
+        active_edges = pop2.edge_mask * active_pairs
+        has_edge     = jnp.any(active_edges, axis=1) | jnp.any(active_edges, axis=2)  # [P, N]
+        hidden       = jnp.zeros(cfg.N_max, bool).at[cfg.n_in: cfg.N_max - cfg.n_out].set(True)
+        isolated     = pop2.active_mask & ~has_edge & hidden[None, :]
+        assert not jnp.any(isolated), "Isolated hidden neurons found after mutate()"
 
     def test_zero_rates_produces_identical_genome(self, genome, cfg):
         """With all structural rates at 0, structural fields must not change."""

@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from .config import Config
-from .genome import Genome, E
+from .genome import Genome, E, prune_isolated
 
 
 # ── MutationRates ─────────────────────────────────────────────────────────────
@@ -124,34 +124,54 @@ def type_flip(
 
 def add_node(key: jax.Array, genome: Genome, cfg: Config) -> Genome:
     """
-    Activate the first free hidden slot and initialise its fields.
-    No-op when all slots are already active.
+    Activate the first free hidden slot, initialise its fields, and wire it
+    with one random incoming edge and one random outgoing edge to/from
+    existing active neurons.
+
+    Two connections ensure the new node is part of a computation path
+    (receives signal AND can propagate it) so prune_isolated never
+    immediately removes it.  No-op when all slots are already active.
     """
-    k_type, k_tau, k_pos, k_bias, k_slot = jax.random.split(key, 5)
+    k_type, k_tau, k_pos, k_bias, k_src, k_dst, k_wi, k_wo = jax.random.split(key, 8)
     N = cfg.N_max
 
-    # Pick the first inactive hidden slot (deterministic — keeps add_node simple
-    # and predictable; remove_node uses random selection for variety)
-    eligible     = _hidden_slots(cfg) & ~genome.active_mask
-    any_free     = jnp.any(eligible)
-    slot         = jnp.argmax(eligible)  # first True; guarded by any_free below
+    eligible = _hidden_slots(cfg) & ~genome.active_mask
+    any_free = jnp.any(eligible)
+    slot     = jnp.argmax(eligible)  # first True; guarded by apply below
 
-    # Initialise new node
+    # Initialise new node parameters
     new_type = jax.random.randint(k_type, (), 0, 3, dtype=jnp.uint8)
     lo, hi   = _tau_bounds(cfg)
     new_tau  = lo[new_type] + jax.random.uniform(k_tau) * (hi[new_type] - lo[new_type])
     new_pos  = jax.random.uniform(k_pos, (2,))
     new_bias = jax.random.normal(k_bias) * 0.1
 
-    # Conditionally apply (no-op if no free slot)
-    active_mask = jnp.where(any_free, genome.active_mask.at[slot].set(True),     genome.active_mask)
-    neuron_type = jnp.where(any_free, genome.neuron_type.at[slot].set(new_type), genome.neuron_type)
-    tau         = jnp.where(any_free, genome.tau.at[slot].set(new_tau),           genome.tau)
-    bias        = jnp.where(any_free, genome.bias.at[slot].set(new_bias),         genome.bias)
-    position    = jnp.where(any_free, genome.position.at[slot].set(new_pos),      genome.position)
+    # Pick one source (src → slot) and one destination (slot → dst)
+    src, any_src = _random_eligible_1d(k_src, genome.active_mask)
+    dst, any_dst = _random_eligible_1d(k_dst, genome.active_mask)
+    wi = jnp.abs(jax.random.normal(k_wi)) * 0.5 + 0.01
+    wo = jnp.abs(jax.random.normal(k_wo)) * 0.5 + 0.01
+
+    new_edges   = (genome.edge_mask
+                   .at[src, slot].set(True)
+                   .at[slot, dst].set(True))
+    new_weights = (genome.weight_matrix
+                   .at[src, slot].set(wi)
+                   .at[slot, dst].set(wo))
+
+    apply = any_free & any_src & any_dst
+
+    active_mask   = jnp.where(apply, genome.active_mask.at[slot].set(True),     genome.active_mask)
+    neuron_type   = jnp.where(apply, genome.neuron_type.at[slot].set(new_type), genome.neuron_type)
+    tau           = jnp.where(apply, genome.tau.at[slot].set(new_tau),           genome.tau)
+    bias          = jnp.where(apply, genome.bias.at[slot].set(new_bias),         genome.bias)
+    position      = jnp.where(apply, genome.position.at[slot].set(new_pos),      genome.position)
+    edge_mask     = jnp.where(apply, new_edges,   genome.edge_mask)
+    weight_matrix = jnp.where(apply, new_weights, genome.weight_matrix)
 
     return replace(genome, active_mask=active_mask, neuron_type=neuron_type,
-                   tau=tau, bias=bias, position=position)
+                   tau=tau, bias=bias, position=position,
+                   edge_mask=edge_mask, weight_matrix=weight_matrix)
 
 
 def remove_node(key: jax.Array, genome: Genome, cfg: Config) -> Genome:
@@ -245,4 +265,4 @@ def mutate(key: jax.Array, genome: Genome, cfg: Config, rates: MutationRates) ->
     g = jax.lax.cond(do_add_edge,    lambda g_: add_edge(   k[11], g_, cfg), lambda g_: g_, g)
     g = jax.lax.cond(do_remove_edge, lambda g_: remove_edge(k[12], g_, cfg), lambda g_: g_, g)
 
-    return g
+    return prune_isolated(g, cfg)  # no-op when genome is already valid
