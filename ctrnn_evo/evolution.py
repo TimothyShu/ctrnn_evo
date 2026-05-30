@@ -149,7 +149,7 @@ def compute_fitness(
 
     Returns fitness [pop_size].
     """
-    # Apply warm-up ramp: scale all λ by ramp ∈ [0, 1]
+    # Apply warm-up ramp: scale all penalty terms (λ and fracs) by ramp ∈ [0, 1]
     if cfg.penalty_warmup_gens > 0:
         ramp = min(generation / cfg.penalty_warmup_gens, 1.0)
         cfg = dataclasses.replace(
@@ -157,6 +157,9 @@ def compute_fitness(
             lambda_edge=cfg.lambda_edge * ramp,
             lambda_dist=cfg.lambda_dist * ramp,
             lambda_act=cfg.lambda_act  * ramp,
+            dist_frac=cfg.dist_frac * ramp,
+            act_frac=cfg.act_frac   * ramp,
+            edge_frac=cfg.edge_frac * ramp,
         )
 
     if cfg.fitness_mode == "food":
