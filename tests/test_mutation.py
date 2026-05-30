@@ -228,9 +228,10 @@ class TestTypeFlip:
 
     def test_io_slots_never_flip(self, genome, cfg):
         # Run many flips; I/O neuron types must never change
+        _flip = jax.jit(lambda key, g: type_flip(key, g, cfg, flip_prob=1.0))
         g = genome
         for i in range(20):
-            g = type_flip(jax.random.PRNGKey(52 + i), g, cfg, flip_prob=1.0)
+            g = _flip(jax.random.PRNGKey(52 + i), g)
         assert jnp.all(g.neuron_type[:cfg.n_in]  == E), "Input neurons changed type"
         assert jnp.all(g.neuron_type[-cfg.n_out:] == E), "Output neurons changed type"
 
@@ -337,9 +338,10 @@ class TestRemoveNode:
             assert n_after == n_before  # no-op when nothing to remove
 
     def test_io_slots_never_removed(self, genome, cfg):
+        _remove = jax.jit(lambda key, g: remove_node(key, g, cfg))
         g = genome
         for i in range(20):
-            g = remove_node(jax.random.PRNGKey(72 + i), g, cfg)
+            g = _remove(jax.random.PRNGKey(72 + i), g)
         assert jnp.all(g.active_mask[:cfg.n_in]),  "Input neurons were removed"
         assert jnp.all(g.active_mask[-cfg.n_out:]), "Output neurons were removed"
 
@@ -545,9 +547,10 @@ class TestMilestoneGates:
             type_flip_prob=0.0, add_node_prob=0.0, remove_node_prob=0.0,
             add_edge_prob=0.0, remove_edge_prob=0.0,
         )
+        _mutate = jax.jit(lambda key, g: mutate(key, g, cfg, rates))
         g = genome
         for i in range(100):
-            g = mutate(jax.random.PRNGKey(200 + i), g, cfg, rates)
+            g = _mutate(jax.random.PRNGKey(200 + i), g)
 
         fields_equal(genome, g, "active_mask", "edge_mask", "neuron_type")
         validate_genome(g, cfg)
@@ -562,9 +565,10 @@ class TestMilestoneGates:
 
         mean_before = float(jnp.mean(jnp.sum(pop.active_mask, axis=1)))
 
+        _add_node = jax.jit(jax.vmap(lambda k, g: add_node(k, g, cfg), in_axes=(0, 0)))
         for i in range(10):
             op_keys = jax.random.split(jax.random.PRNGKey(301 + i), P)
-            pop = jax.vmap(add_node, in_axes=(0, 0, None))(op_keys, pop, cfg)
+            pop = _add_node(op_keys, pop)
 
         mean_after = float(jnp.mean(jnp.sum(pop.active_mask, axis=1)))
         assert mean_after > mean_before, (
@@ -583,9 +587,10 @@ class TestMilestoneGates:
 
         mean_before = float(jnp.mean(jnp.sum(pop.active_mask, axis=1)))
 
+        _remove_node = jax.jit(jax.vmap(lambda k, g: remove_node(k, g, cfg), in_axes=(0, 0)))
         for i in range(10):
             op_keys = jax.random.split(jax.random.PRNGKey(401 + i), P)
-            pop = jax.vmap(remove_node, in_axes=(0, 0, None))(op_keys, pop, cfg)
+            pop = _remove_node(op_keys, pop)
 
         mean_after = float(jnp.mean(jnp.sum(pop.active_mask, axis=1)))
         assert mean_after < mean_before, (
@@ -609,9 +614,10 @@ class TestMilestoneGates:
 
         mean_before = float(jnp.mean(count_edges(pop)))
 
+        _add_edge = jax.jit(jax.vmap(lambda k, g: add_edge(k, g, cfg), in_axes=(0, 0)))
         for i in range(10):
             op_keys = jax.random.split(jax.random.PRNGKey(501 + i), P)
-            pop = jax.vmap(add_edge, in_axes=(0, 0, None))(op_keys, pop, cfg)
+            pop = _add_edge(op_keys, pop)
 
         mean_after = float(jnp.mean(count_edges(pop)))
         assert mean_after > mean_before
