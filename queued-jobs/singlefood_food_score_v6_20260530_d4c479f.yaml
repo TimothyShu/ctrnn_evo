@@ -1,0 +1,21 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.05
+  act-frac: 0.10
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  condition: both
+  output-dir: runs/singlefood/food_score_v6
+notes: >
+  Re-run with structural genome fixes: (1) prune_isolated now uses has_in AND
+  has_out — sink/source hidden neurons are deactivated, not just fully isolated
+  ones; (2) add_node wires each new neuron with one random incoming + one
+  outgoing edge at birth; (3) random_genome calls prune_isolated so initial
+  populations are valid. Running both conditions to establish a food-score
+  baseline (modular-only since v2). Same penalty params as v5
+  (dist_frac=0.05, act_frac=0.10, normalised c_act). ~12 hrs.
