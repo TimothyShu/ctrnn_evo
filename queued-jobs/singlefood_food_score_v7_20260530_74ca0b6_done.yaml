@@ -1,0 +1,21 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.05
+  act-frac: 0.10
+  penalty-warmup-gens: 200
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  condition: modular
+  output-dir: runs/singlefood/food_score_v7
+notes: >
+  Combines proportional fracs with warmup. penalty_warmup_gens=200 now
+  ramps dist_frac and act_frac (as well as lambda_*) from 0 to their full
+  values over 200 gens, giving the same zero-penalty early exploration
+  window as v3 while switching to self-calibrating proportional pressure
+  afterwards. Hypothesis: this recovers v3's hot-rep breakouts while
+  keeping v5's structural stability and high Q. Modular only. ~6 hrs.
