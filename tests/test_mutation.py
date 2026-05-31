@@ -44,6 +44,7 @@ from ctrnn_evo.mutation import (
     mutate,
     prune_isolated,
     MutationRates,
+    _hidden_slots,
 )
 
 
@@ -431,6 +432,51 @@ class TestRemoveEdge:
         g2 = remove_edge(jax.random.PRNGKey(92), genome_sparse, cfg)
         assert edge_count(g2) == 0
         validate_genome(g2, cfg)
+
+    def test_never_removes_last_outgoing_edge_of_hidden_neuron(self, cfg):
+        """remove_edge must not strand a hidden neuron with zero outgoing edges."""
+        # Build a genome where a hidden neuron has exactly 1 outgoing edge;
+        # call remove_edge many times and verify that neuron is never stranded.
+        g = random_genome(jax.random.PRNGKey(95), cfg)
+        # Find any hidden neuron that's active
+        hidden = np.array(_hidden_slots(cfg))
+        active = np.array(g.active_mask)
+        hidden_active = np.where(hidden & active)[0]
+        if len(hidden_active) == 0:
+            pytest.skip("no active hidden neurons in fixture")
+        h = int(hidden_active[0])
+        # Strip all outgoing edges for h, leave exactly one
+        dest = int(np.where(np.array(g.edge_mask)[h] & active)[0][0]) \
+            if np.any(np.array(g.edge_mask)[h] & active) else -1
+        if dest == -1:
+            pytest.skip("chosen hidden neuron has no outgoing edges")
+        new_edges = g.edge_mask.at[h, :].set(False).at[h, dest].set(True)
+        g = replace(g, edge_mask=new_edges)
+        for i in range(30):
+            g2 = remove_edge(jax.random.PRNGKey(96 + i), g, cfg)
+            # h must still have at least 1 outgoing edge
+            out = np.array(g2.edge_mask)[h] & np.array(g2.active_mask)
+            assert np.any(out), f"Hidden neuron {h} lost its last outgoing edge at trial {i}"
+
+    def test_never_removes_last_incoming_edge_of_hidden_neuron(self, cfg):
+        """remove_edge must not strand a hidden neuron with zero incoming edges."""
+        g = random_genome(jax.random.PRNGKey(97), cfg)
+        hidden = np.array(_hidden_slots(cfg))
+        active = np.array(g.active_mask)
+        hidden_active = np.where(hidden & active)[0]
+        if len(hidden_active) == 0:
+            pytest.skip("no active hidden neurons in fixture")
+        h = int(hidden_active[0])
+        src = int(np.where(np.array(g.edge_mask)[:, h] & active)[0][0]) \
+            if np.any(np.array(g.edge_mask)[:, h] & active) else -1
+        if src == -1:
+            pytest.skip("chosen hidden neuron has no incoming edges")
+        new_edges = g.edge_mask.at[:, h].set(False).at[src, h].set(True)
+        g = replace(g, edge_mask=new_edges)
+        for i in range(30):
+            g2 = remove_edge(jax.random.PRNGKey(98 + i), g, cfg)
+            inc = np.array(g2.edge_mask)[:, h] & np.array(g2.active_mask)
+            assert np.any(inc), f"Hidden neuron {h} lost its last incoming edge at trial {i}"
 
     def test_vmappable(self, cfg):
         keys  = jax.random.split(jax.random.PRNGKey(93), 32)

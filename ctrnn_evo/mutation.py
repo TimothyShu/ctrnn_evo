@@ -222,11 +222,31 @@ def add_edge(key: jax.Array, genome: Genome, cfg: Config) -> Genome:
 def remove_edge(key: jax.Array, genome: Genome, cfg: Config) -> Genome:
     """
     Remove a randomly selected active edge between two active neurons.
-    No-op when no such edge exists.
+
+    An edge i→j is only eligible for removal if doing so would not strand
+    either endpoint as a source-only or sink-only hidden neuron:
+      - source i (if hidden) must have ≥2 outgoing active edges
+      - dest   j (if hidden) must have ≥2 incoming active edges
+
+    I/O neurons are exempt from this constraint (they are never deactivated
+    by prune_isolated regardless of edge count).  No-op when no eligible edge
+    exists.
     """
     N = cfg.N_max
 
-    eligible      = genome.edge_mask & genome.active_mask[:, None] & genome.active_mask[None, :]
+    active_pairs = genome.active_mask[:, None] & genome.active_mask[None, :]
+    active_edges = genome.edge_mask & active_pairs
+    out_degree   = jnp.sum(active_edges, axis=1)   # [N] outgoing edges per neuron
+    in_degree    = jnp.sum(active_edges, axis=0)   # [N] incoming edges per neuron
+
+    hidden = _hidden_slots(cfg)  # [N] True for hidden neurons only
+
+    # Removing i→j would strand i if i is hidden and it's its last outgoing edge
+    # Removing i→j would strand j if j is hidden and it's its last incoming edge
+    would_strand_source = hidden[:, None] & (out_degree[:, None] <= 1)
+    would_strand_sink   = hidden[None, :] & (in_degree[None, :] <= 1)
+
+    eligible      = active_edges & ~would_strand_source & ~would_strand_sink
     eligible_flat = eligible.reshape(-1)
     slot_flat, any_remove = _random_eligible_1d(key, eligible_flat)
 
