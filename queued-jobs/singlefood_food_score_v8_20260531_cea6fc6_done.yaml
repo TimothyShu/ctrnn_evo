@@ -1,0 +1,23 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.05
+  act-frac: 0.10
+  penalty-warmup-gens: 200
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  condition: both
+  output-dir: runs/singlefood/food_score_v8
+notes: >
+  Same as v7 (dist_frac=0.05, act_frac=0.10, warmup=200) but with the
+  remove_edge fix (cea6fc6): edge removal now guards against stranding
+  hidden neurons as source-only or sink-only, preventing silent node loss
+  from structural churn independent of fitness pressure. Running both
+  conditions — baseline expected to maintain healthier node counts vs v6
+  (which over-pruned to 13 nodes purely from edge churn). Modular
+  expected to retain more nodes → better Q alongside v7-level fitness.
+  ~12 hrs.
