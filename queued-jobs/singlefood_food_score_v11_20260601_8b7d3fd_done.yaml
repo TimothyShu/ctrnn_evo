@@ -1,0 +1,22 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.02
+  act-frac: 0.05
+  penalty-warmup-gens: 400
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  seed: 1
+  condition: modular
+  output-dir: runs/singlefood/food_score_v11
+notes: >
+  Longer warmup test: same fracs as v10 (dist_frac=0.02, act_frac=0.05)
+  but warmup doubled to 400 gens. v10 cold reps diverged at gen 123
+  during the existing 200-gen free window — hypothesis is that longer
+  warmup does NOT fix this since the split predates the penalty. If
+  hot/cold ratio stays at 3/5, confirms the cyclic loosening approach
+  is needed rather than just a longer initial window. ~6 hrs.
