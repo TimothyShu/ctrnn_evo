@@ -1,0 +1,22 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.02
+  act-frac: 0.05
+  penalty-warmup-gens: 200
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  seed: 1
+  condition: modular
+  output-dir: runs/singlefood/food_score_v10
+notes: >
+  Lower regularisation: dist_frac=0.02, act_frac=0.05 (half of v8/v9).
+  v8 modular with 0.05/0.10 pruned to 12 nodes (wiring/node=0.83 — near
+  minimum connectivity), killing Q signal. Target is 20-25 nodes where
+  community structure is detectable. Warmup=200 retained to protect early
+  exploration. Different seed (1) to avoid replay of v8/v9. Modular
+  only — v8 baseline already established. ~6 hrs.
