@@ -1,0 +1,24 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.02
+  act-frac: 0.05
+  penalty-warmup-gens: 200
+  penalty-cycle-gens: 300
+  penalty-cycle-free-gens: 100
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  seed: 1
+  condition: modular
+  output-dir: runs/singlefood/food_score_v12
+notes: >
+  Cyclic loosening: warmup=200 then every 300 gens the last 100 are
+  penalty-free. Same fracs as v10/v11 (dist=0.02, act=0.05). Schedule:
+  gen 0-199 warmup, 200-399 full penalty, 400-499 FREE, 500-699 penalty,
+  700-799 FREE, 800-999 penalty. Two rescue windows for cold reps to
+  escape local optima. v11 (warmup=400) confirmed longer warmup alone
+  does not fix the split — cyclic rescues are needed. ~6 hrs.
