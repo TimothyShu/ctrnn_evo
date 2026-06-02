@@ -116,6 +116,12 @@ def parse_args() -> argparse.Namespace:
                    help="linearly ramp all λ penalties from 0 to their full values over this many "
                         "generations (0 = disabled, penalties are constant from gen 0). "
                         "Prevents early-generation over-pruning when food signal is weak.")
+    p.add_argument("--penalty-cycle-gens", type=int, default=0,
+                   help="cyclic loosening cycle length after warmup (0 = disabled). "
+                        "Every penalty_cycle_gens generations, the last penalty_cycle_free_gens "
+                        "have all penalties set to zero, allowing cold reps to escape local optima.")
+    p.add_argument("--penalty-cycle-free-gens", type=int, default=0,
+                   help="free (penalty=0) window at the end of each cycle (0 = disabled).")
     p.add_argument("--verbose",        action="store_true",       help="print per-generation progress")
     p.add_argument("--smoke-test",     action="store_true",       help="quick run: 2 replicates × 5 generations × 1 eval")
     p.add_argument("--quick-test",     action="store_true",       help="lambda sweep validation: 3 replicates × 150 generations × pop=500")
@@ -312,6 +318,8 @@ def main() -> None:
         fitness_mode=args.fitness_mode,
         position_sensors=args.position_sensors,
         penalty_warmup_gens=args.penalty_warmup_gens,
+        penalty_cycle_gens=args.penalty_cycle_gens,
+        penalty_cycle_free_gens=args.penalty_cycle_free_gens,
     )
     cfg_modular = Config(
         population_size=args.pop_size,
@@ -325,6 +333,8 @@ def main() -> None:
         fitness_mode=args.fitness_mode,
         position_sensors=args.position_sensors,
         penalty_warmup_gens=args.penalty_warmup_gens,
+        penalty_cycle_gens=args.penalty_cycle_gens,
+        penalty_cycle_free_gens=args.penalty_cycle_free_gens,
     )
 
     # ── Key schedule ──────────────────────────────────────────────────────────

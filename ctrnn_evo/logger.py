@@ -139,6 +139,8 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
         d.setdefault("position_sensors", False)
         # default penalty_warmup_gens for runs predating warm-up support
         d.setdefault("penalty_warmup_gens", 0)
+        d.setdefault("penalty_cycle_gens", 0)
+        d.setdefault("penalty_cycle_free_gens", 0)
         # defaults for proportional penalty fracs (runs predating this feature)
         d.setdefault("dist_frac",  0.0)
         d.setdefault("act_frac",   0.0)

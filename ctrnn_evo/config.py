@@ -34,6 +34,20 @@ class Config:
     # foraging strategy has evolved.  0 = disabled (lambdas are constant).
     penalty_warmup_gens: int = 0
 
+    # Cyclic loosening — after the initial warm-up, drop all penalties to zero
+    # for penalty_cycle_free_gens at the end of every penalty_cycle_gens window.
+    # Allows cold reps that converged on a local optimum to re-explore before
+    # pressure resumes.  Both must be > 0 to enable; 0 = disabled.
+    #
+    # Example: warmup=200, cycle_gens=300, free_gens=100 →
+    #   gen 0-199:   warmup ramp
+    #   gen 200-499: full penalty
+    #   gen 500-599: free (penalty=0)   ← rescue window 1
+    #   gen 600-899: full penalty
+    #   gen 900-999: free (penalty=0)   ← rescue window 2
+    penalty_cycle_gens:      int = 0
+    penalty_cycle_free_gens: int = 0
+
     # Cost fractions — proportional mode (0 = disabled; takes priority over λ when > 0)
     #
     # Penalty = frac × f_raw × (C / C0_ref)

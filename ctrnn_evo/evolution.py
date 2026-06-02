@@ -119,6 +119,25 @@ def eval_population(
     )
 
 
+def _warmup_ramp(generation: int, cfg: Config) -> float:
+    """Linear ramp from 0 to 1 over penalty_warmup_gens; 1.0 thereafter."""
+    if cfg.penalty_warmup_gens > 0:
+        return min(generation / cfg.penalty_warmup_gens, 1.0)
+    return 1.0
+
+
+def _cycle_ramp(generation: int, cfg: Config) -> float:
+    """1.0 during penalty phases; 0.0 during the free window at end of each cycle.
+    Always returns 1.0 during the warmup period so the two functions compose cleanly."""
+    if cfg.penalty_cycle_gens > 0 and cfg.penalty_cycle_free_gens > 0:
+        if generation < cfg.penalty_warmup_gens:
+            return 1.0  # warmup handles this range; don't interfere
+        pos = (generation - cfg.penalty_warmup_gens) % cfg.penalty_cycle_gens
+        if pos >= cfg.penalty_cycle_gens - cfg.penalty_cycle_free_gens:
+            return 0.0
+    return 1.0
+
+
 def compute_fitness(
     steps: jnp.ndarray,        # [pop_size] float32 mean steps survived
     c_acts: jnp.ndarray,       # [pop_size] float32 mean activation cost
@@ -138,20 +157,23 @@ def compute_fitness(
         f_raw = mean_raw_food / (episode_steps * n_food_types)
         Can exceed 1.0 for agents that actively forage near hotspot centres.
 
-    Cost penalty (applied in both modes):
-        fitness = f_raw - lambda_edge * C_edge - lambda_dist * C_dist - lambda_act * C_act
+    Penalty schedule:
+        ramp = _warmup_ramp(gen, cfg) × _cycle_ramp(gen, cfg)
 
-    Penalty warm-up (cfg.penalty_warmup_gens > 0):
-        All three λ coefficients are linearly scaled by
-        ramp = min(generation / penalty_warmup_gens, 1.0),
-        so at generation 0 penalties are zero and at generation
-        penalty_warmup_gens they reach their configured values.
+        _warmup_ramp: linearly scales penalties from 0→1 over penalty_warmup_gens,
+            then stays at 1.0 — protects early exploration from over-pruning.
+
+        _cycle_ramp: drops to 0.0 during the free window at the end of every
+            penalty_cycle_gens block after warmup — periodic loosening that lets
+            cold reps escape local optima before pressure resumes.
+
+        The product composes cleanly: during warmup _cycle_ramp=1 so warmup
+        controls; after warmup _warmup_ramp=1 so cycling controls.
 
     Returns fitness [pop_size].
     """
-    # Apply warm-up ramp: scale all penalty terms (λ and fracs) by ramp ∈ [0, 1]
-    if cfg.penalty_warmup_gens > 0:
-        ramp = min(generation / cfg.penalty_warmup_gens, 1.0)
+    ramp = _warmup_ramp(generation, cfg) * _cycle_ramp(generation, cfg)
+    if ramp != 1.0:
         cfg = dataclasses.replace(
             cfg,
             lambda_edge=cfg.lambda_edge * ramp,
