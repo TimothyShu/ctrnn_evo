@@ -37,6 +37,9 @@ from ctrnn_evo.evolution import (
     evolve_step,
     collect_stats,
     run_evolution,
+    _warmup_ramp,
+    _cycle_ramp,
+    _mutation_scale,
 )
 
 
@@ -341,3 +344,93 @@ def test_collect_stats_values_plausible(pop, evaluated, cfg):
     assert stats["mean_edge_cost"] >= 0.0
     assert stats["mean_wiring_cost"] >= 0.0
     assert 0.0 <= stats["mean_fitness"] <= stats["max_fitness"] + 1e-6
+
+
+# ── 12. _mutation_scale ───────────────────────────────────────────────────────
+
+class TestMutationScale:
+    """Unit tests for the mutation warmup scale function."""
+
+    def test_gen0_returns_full_scale(self):
+        cfg = Config(N_max=16, n_out=2, penalty_warmup_gens=200, mutation_warmup_scale=3.0)
+        assert _mutation_scale(0, cfg) == pytest.approx(3.0)
+
+    def test_midpoint_returns_midpoint_scale(self):
+        cfg = Config(N_max=16, n_out=2, penalty_warmup_gens=200, mutation_warmup_scale=3.0)
+        # At gen 100 (half of 200): scale = 3.0*(1-0.5) + 1.0*0.5 = 2.0
+        assert _mutation_scale(100, cfg) == pytest.approx(2.0)
+
+    def test_at_warmup_end_returns_one(self):
+        cfg = Config(N_max=16, n_out=2, penalty_warmup_gens=200, mutation_warmup_scale=3.0)
+        assert _mutation_scale(200, cfg) == pytest.approx(1.0)
+
+    def test_after_warmup_returns_one(self):
+        cfg = Config(N_max=16, n_out=2, penalty_warmup_gens=200, mutation_warmup_scale=3.0)
+        for gen in [201, 500, 999]:
+            assert _mutation_scale(gen, cfg) == pytest.approx(1.0), \
+                f"Expected 1.0 after warmup at gen {gen}"
+
+    def test_scale_one_always_returns_one(self):
+        cfg = Config(N_max=16, n_out=2, penalty_warmup_gens=200, mutation_warmup_scale=1.0)
+        for gen in [0, 100, 200, 999]:
+            assert _mutation_scale(gen, cfg) == pytest.approx(1.0)
+
+    def test_no_warmup_always_returns_one(self):
+        cfg = Config(N_max=16, n_out=2, penalty_warmup_gens=0, mutation_warmup_scale=3.0)
+        for gen in [0, 100, 999]:
+            assert _mutation_scale(gen, cfg) == pytest.approx(1.0)
+
+    def test_scale_never_below_one(self):
+        cfg = Config(N_max=16, n_out=2, penalty_warmup_gens=200, mutation_warmup_scale=5.0)
+        for gen in range(0, 300, 10):
+            assert _mutation_scale(gen, cfg) >= 1.0 - 1e-6
+
+
+# ── 13. mutation warmup integration ──────────────────────────────────────────
+
+def test_mutation_warmup_increases_weight_diversity():
+    """With mutation_warmup_scale > 1, weight variation across the population
+    after one evolve_step at gen 0 should be larger than without scaling."""
+    import numpy as np
+
+    cfg_base  = Config(N_max=16, n_out=2, K=4, population_size=50,
+                       penalty_warmup_gens=200, mutation_warmup_scale=1.0)
+    cfg_scale = Config(N_max=16, n_out=2, K=4, population_size=50,
+                       penalty_warmup_gens=200, mutation_warmup_scale=5.0)
+    wcfg  = WorldConfig(episode_steps=50)
+    rates = MutationRates(weight_sigma=0.1, add_node_prob=0.0, remove_node_prob=0.0,
+                          add_edge_prob=0.0, remove_edge_prob=0.0)
+
+    key = jax.random.PRNGKey(99)
+    pop = init_population(key, cfg_base)
+    k_eval, k_step_base, k_step_scale = jax.random.split(key, 3)
+
+    steps, c_acts, raw_food = eval_population(k_eval, pop, cfg_base, wcfg, n_evals=2)
+    fitness = compute_fitness(steps, c_acts, raw_food, pop, cfg_base, wcfg)
+
+    # One evolve_step with and without warmup scale — same key, same starting pop
+    _, _, history_base = run_evolution(
+        k_step_base, 2, cfg_base, wcfg, rates, n_evals=2)
+    _, _, history_scale = run_evolution(
+        k_step_scale, 2, cfg_scale, wcfg, rates, n_evals=2)
+
+    # With scale=5, mean_n_active should show more structural diversity;
+    # simpler check: early weight std should be higher for scaled run
+    pop_base  = init_population(k_step_base,  cfg_base)
+    pop_scale = init_population(k_step_scale, cfg_scale)
+
+    k_e = jax.random.PRNGKey(77)
+    steps_b, c_b, rf_b = eval_population(k_e, pop_base,  cfg_base,  wcfg, n_evals=2)
+    steps_s, c_s, rf_s = eval_population(k_e, pop_scale, cfg_scale, wcfg, n_evals=2)
+    fit_b = compute_fitness(steps_b, c_b, rf_b, pop_base,  cfg_base,  wcfg)
+    fit_s = compute_fitness(steps_s, c_s, rf_s, pop_scale, cfg_scale, wcfg)
+
+    off_base  = evolve_step(jax.random.PRNGKey(88), pop_base,  fit_b, rates, cfg_base,  generation=0)
+    off_scale = evolve_step(jax.random.PRNGKey(88), pop_scale, fit_s, rates, cfg_scale, generation=0)
+
+    std_base  = float(jnp.std(off_base.weight_matrix))
+    std_scale = float(jnp.std(off_scale.weight_matrix))
+    assert std_scale > std_base, (
+        f"Expected higher weight std with scale=5 at gen 0 "
+        f"(got std_base={std_base:.4f}, std_scale={std_scale:.4f})"
+    )

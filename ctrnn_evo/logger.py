@@ -141,6 +141,7 @@ def load_config(run_dir: Path) -> tuple[Config, WorldConfig, MutationRates]:
         d.setdefault("penalty_warmup_gens", 0)
         d.setdefault("penalty_cycle_gens", 0)
         d.setdefault("penalty_cycle_free_gens", 0)
+        d.setdefault("mutation_warmup_scale", 1.0)
         # defaults for proportional penalty fracs (runs predating this feature)
         d.setdefault("dist_frac",  0.0)
         d.setdefault("act_frac",   0.0)

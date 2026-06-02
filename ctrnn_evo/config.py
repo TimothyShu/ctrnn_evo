@@ -34,6 +34,13 @@ class Config:
     # foraging strategy has evolved.  0 = disabled (lambdas are constant).
     penalty_warmup_gens: int = 0
 
+    # Mutation warm-up scale — during penalty_warmup_gens, scale all continuous
+    # mutation sigmas (weight, tau, bias, position) by this factor, linearly
+    # decaying to 1.0 by the end of the warmup window.  Mirrors the penalty
+    # ramp: high exploration when penalty=0, normal rates when penalty=full.
+    # 1.0 = disabled (constant mutation rates throughout).
+    mutation_warmup_scale: float = 1.0
+
     # Cyclic loosening — after the initial warm-up, drop all penalties to zero
     # for penalty_cycle_free_gens at the end of every penalty_cycle_gens window.
     # Allows cold reps that converged on a local optimum to re-explore before

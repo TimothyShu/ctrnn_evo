@@ -122,6 +122,10 @@ def parse_args() -> argparse.Namespace:
                         "have all penalties set to zero, allowing cold reps to escape local optima.")
     p.add_argument("--penalty-cycle-free-gens", type=int, default=0,
                    help="free (penalty=0) window at the end of each cycle (0 = disabled).")
+    p.add_argument("--mutation-warmup-scale", type=float, default=1.0,
+                   help="scale factor for continuous mutation sigmas at gen 0, decaying linearly "
+                        "to 1.0 by penalty_warmup_gens. Mirrors the penalty ramp: high exploration "
+                        "when penalty=0, normal rates when penalty=full. 1.0 = disabled.")
     p.add_argument("--verbose",        action="store_true",       help="print per-generation progress")
     p.add_argument("--smoke-test",     action="store_true",       help="quick run: 2 replicates × 5 generations × 1 eval")
     p.add_argument("--quick-test",     action="store_true",       help="lambda sweep validation: 3 replicates × 150 generations × pop=500")
@@ -320,6 +324,7 @@ def main() -> None:
         penalty_warmup_gens=args.penalty_warmup_gens,
         penalty_cycle_gens=args.penalty_cycle_gens,
         penalty_cycle_free_gens=args.penalty_cycle_free_gens,
+        mutation_warmup_scale=args.mutation_warmup_scale,
     )
     cfg_modular = Config(
         population_size=args.pop_size,
@@ -335,6 +340,7 @@ def main() -> None:
         penalty_warmup_gens=args.penalty_warmup_gens,
         penalty_cycle_gens=args.penalty_cycle_gens,
         penalty_cycle_free_gens=args.penalty_cycle_free_gens,
+        mutation_warmup_scale=args.mutation_warmup_scale,
     )
 
     # ── Key schedule ──────────────────────────────────────────────────────────

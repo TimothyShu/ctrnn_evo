@@ -119,6 +119,19 @@ def eval_population(
     )
 
 
+def _mutation_scale(generation: int, cfg: Config) -> float:
+    """Scale factor for continuous mutation sigmas during warmup.
+
+    Mirrors the penalty ramp in reverse: starts at mutation_warmup_scale at
+    gen 0, decays linearly to 1.0 at penalty_warmup_gens, stays 1.0 after.
+    Returns 1.0 when mutation_warmup_scale==1.0 or penalty_warmup_gens==0.
+    """
+    if cfg.mutation_warmup_scale > 1.0 and cfg.penalty_warmup_gens > 0:
+        ramp = min(generation / cfg.penalty_warmup_gens, 1.0)
+        return cfg.mutation_warmup_scale * (1.0 - ramp) + 1.0 * ramp
+    return 1.0
+
+
 def _warmup_ramp(generation: int, cfg: Config) -> float:
     """Linear ramp from 0 to 1 over penalty_warmup_gens; 1.0 thereafter."""
     if cfg.penalty_warmup_gens > 0:
@@ -256,6 +269,7 @@ def evolve_step(
     fitness: jnp.ndarray,   # [pop_size] — fitness of current population
     rates: MutationRates,
     cfg: Config,
+    generation: int = 0,
 ) -> Genome:
     """
     Produce the next generation via tournament selection + mutation + elitism.
@@ -263,9 +277,25 @@ def evolve_step(
     The best genome from the current population is copied unchanged into
     slot 0 of the offspring (elitism = 1), preventing fitness regression.
 
+    When cfg.mutation_warmup_scale > 1.0, continuous mutation sigmas are
+    scaled down from mutation_warmup_scale at gen 0 to 1.0 at
+    penalty_warmup_gens — mirroring the penalty ramp to encourage
+    exploration when penalty pressure is absent.
+
     Returns the new (unevaluated) offspring population.
     """
     k_sel, k_mut = jax.random.split(key)
+
+    # Scale continuous sigmas during warmup
+    scale = _mutation_scale(generation, cfg)
+    if scale != 1.0:
+        rates = dataclasses.replace(
+            rates,
+            weight_sigma=rates.weight_sigma   * scale,
+            tau_sigma=rates.tau_sigma         * scale,
+            bias_sigma=rates.bias_sigma       * scale,
+            position_sigma=rates.position_sigma * scale,
+        )
 
     # Selection + mutation
     parent_idxs = select_parents(k_sel, fitness, cfg.population_size, cfg.tournament_size)
@@ -426,7 +456,7 @@ def run_evolution(
 
         # Evolve → evaluate
         key, k_step, k_eval = jax.random.split(key, 3)
-        pop                     = evolve_step(k_step, pop, fitness, rates, cfg)
+        pop                     = evolve_step(k_step, pop, fitness, rates, cfg, generation=gen)
         steps, c_acts, raw_food = eval_population(k_eval, pop, cfg, wcfg, n_evals)
         fitness                 = compute_fitness(steps, c_acts, raw_food, pop, cfg, wcfg,
                                                   generation=gen + 1)
