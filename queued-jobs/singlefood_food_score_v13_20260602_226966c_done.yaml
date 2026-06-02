@@ -1,0 +1,24 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.02
+  act-frac: 0.05
+  penalty-warmup-gens: 200
+  penalty-cycle-gens: 600
+  penalty-cycle-free-gens: 100
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  seed: 1
+  condition: modular
+  output-dir: runs/singlefood/food_score_v13
+notes: >
+  Single rescue window: cycle_gens=600, free_gens=100. One FREE window
+  at gens 700-799 when hot reps are strongly established and cold reps
+  are maximally stuck. v12 showed FREE-2 (second window) rescued nobody
+  and only added noise — this tests whether a single well-timed window
+  is cleaner than two. Full penalty gen 200-699, FREE 700-799, full
+  penalty 800-999. ~6 hrs.
