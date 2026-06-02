@@ -1,0 +1,23 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.02
+  act-frac: 0.05
+  penalty-warmup-gens: 200
+  penalty-cycle-gens: 200
+  penalty-cycle-free-gens: 50
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  seed: 1
+  condition: modular
+  output-dir: runs/singlefood/food_score_v14
+notes: >
+  More frequent shorter windows: cycle_gens=200, free_gens=50. Four FREE
+  windows at gens 350-399, 550-599, 750-799, 950-999 — same total free
+  time as v12 (200 gens) but 4 x 50 instead of 2 x 100. Hypothesis:
+  earlier first rescue (gen 350 vs 400), less disruption per window
+  (50 gens of drift vs 100), more rescue attempts for stuck reps. ~6 hrs.
