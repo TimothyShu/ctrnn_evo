@@ -1,0 +1,27 @@
+config: configs/base_m8.yaml
+overrides:
+  fitness-mode: food
+  position-sensors: true
+  hotspot-sigma: 4.0
+  metabolism: 0.005
+  dist-frac: 0.02
+  act-frac: 0.05
+  penalty-warmup-gens: 200
+  penalty-cycle-gens: 600
+  penalty-cycle-free-gens: 100
+  mutation-warmup-scale: 3.0
+  n-replicates: 5
+  n-generations: 1000
+  n-evals: 10
+  seed: 1
+  condition: modular
+  output-dir: runs/singlefood/food_score_v15
+notes: >
+  Single rescue window (v13 schedule) + mutation warmup scale=3.0.
+  During warmup (gen 0-200), weight/tau/bias/position sigmas start at
+  3x normal and decay linearly to 1x by gen 200 — mirrors the penalty
+  ramp to maximise exploration when penalty=0. Hypothesis: cold reps
+  fail because they don't find food during the free window; higher
+  early mutation increases the chance of discovering a viable foraging
+  strategy before penalty kicks in. Same cycle as v13 (FREE gen
+  700-799) as the single rescue window. ~6 hrs.
