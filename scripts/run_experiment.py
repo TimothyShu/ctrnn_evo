@@ -497,6 +497,15 @@ def main() -> None:
     total_elapsed = time.perf_counter() - t_total
     print(f"\nTotal wall time: {total_elapsed / 3600:.2f} hrs  ({total_elapsed / 60:.1f} min)")
     print_summary(all_results)
+
+    # Persist per-run results so they survive beyond the printed summary
+    # (consumed by analysis tooling and the forge-queue contract emitter).
+    import json as _json
+    def _jsonable(o):
+        return o.item() if hasattr(o, "item") else float(o)
+    (output_dir / "results.json").write_text(
+        _json.dumps(all_results, indent=2, default=_jsonable)
+    )
     print(f"\nAll results saved to: {output_dir.resolve()}")
 
 
