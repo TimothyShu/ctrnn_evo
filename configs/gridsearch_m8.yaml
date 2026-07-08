@@ -1,0 +1,29 @@
+# Base config for the final grid search over cost types.
+# World params: sigma=4.0, metabolism=0.005 (tuned in food_score v3/v7/v10)
+# Training: food-score fitness, position sensors, 200-gen penalty warmup
+# Each job yaml overrides the cost params + output-dir only.
+
+n-replicates: 10
+n-generations: 2000
+n-evals: 10
+pop-size: 1000
+
+fitness-mode: food
+position-sensors: true
+hotspot-sigma: 4.0
+metabolism: 0.005
+
+# Penalty warmup: 200 gens penalty-free to bootstrap foraging before cost kicks in
+penalty-warmup-gens: 200
+
+# All cost terms off — overridden per condition
+lambda-edge: 0.0
+lambda-dist: 0.0
+lambda-act:  0.0
+dist-frac:   0.0
+act-frac:    0.0
+edge-frac:   0.0
+
+condition: modular
+output-dir: runs/gridsearch/default
+verbose: true
