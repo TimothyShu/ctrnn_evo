@@ -1,22 +1,24 @@
 # Base configuration for multi-food-type experiments.
 # Extends base_m8.yaml with settings appropriate for strip-separated food types.
 #
-# ── Job spec template ─────────────────────────────────────────────────────────
+# ── Job spec template (forge-queue) ───────────────────────────────────────────
+# Experiment settings go under `params:` — `config:` and the overrides are all
+# params, NOT top-level keys (the queue rejects unknown top-level keys).
 #
-# config: configs/multifood_m8.yaml
-#
-# overrides:
+# project: ctrnn_evo
+# venv: ~/jax-env
+# notes: "Short description for ntfy notification"
+# params:
+#   config: configs/multifood_m8.yaml
 #   lambda-edge: 0.0
 #   lambda-dist: 0.0
 #   lambda-act:  0.0
-#   output-dir: runs/<descriptive_name>
 #   n-replicates: 10
 #   n-generations: 500
 #
-# notes: "Short description for ntfy notification"
-#
-# Note: condition defaults to modular — baseline is already established
-# in runs/multifood/baseline. Override with condition: both only if needed.
+# Don't set output-dir — the queue forces it to the archived run dir.
+# This config sets condition: modular (baseline is already established in
+# runs/multifood/baseline); add `condition: both` under params only if needed.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 

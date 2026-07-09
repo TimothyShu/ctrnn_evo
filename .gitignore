@@ -32,16 +32,5 @@ checkpoints/
 # Secrets
 .env
 
-# Queue runtime state (content is ephemeral — directories tracked via .gitkeep)
-/queue/pending/*.yaml
-/queue/pending/*.yml
-/queue/queued/*.yaml
-/queue/queued/*.yml
-/queue/processing/*.yaml
-/queue/processing/*.yml
-/queue/done/*.yaml
-/queue/done/*.yml
-/queue/failed/*.yaml
-/queue/failed/*.yml
-
-# queued-jobs/ is intentionally committed as a historical log
+# queued-jobs/ is intentionally committed as a historical log (frozen archive
+# from the pre-forge in-repo scheduler; live runs now archive to forge:/mnt/archive)
